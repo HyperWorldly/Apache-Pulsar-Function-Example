@@ -322,7 +322,7 @@ public class JobOpener implements Function<String, String> {
 				+ " `distance` FROM `worker_location` WHERE `worker_id` IN (SELECT `worker_id` FROM `worker_status` "
 				+ "WHERE `worker_id` IN (SELECT `worker_id` FROM `workers_tasks_and_expertise` WHERE "
 				+ "`service_category_task_id` IN (" + concatenatedRequiredTaskIds + ") AND `expertise_level_id`="
-				+ expertiseLevelId + " AND `worker_id` NOT IN (SELECT `worker_id` FROM `jobs_received_workers` WHERE "
+				+ expertiseLevelId + " AND `worker_id` NOT IN (SELECT `worker_id` FROM `jobs_receipts` WHERE "
 				+ "`job_id`=" + jobId + ") GROUP BY `worker_id` HAVING COUNT(DISTINCT `service_category_task_id`)="
 				+ requiredTaskIds.length + ") AND `status`='ONLINE') ORDER BY `distance` LIMIT 5";
 		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
@@ -395,8 +395,8 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Checks - in the `jobs_received_workers` table in the database - if a job
-	 * offer sent to workers was actually received by any of them.
+	 * Checks - in the `jobs_receipts` table in the database - if a job offer sent
+	 * to workers was actually received by any of them.
 	 * 
 	 * @param sqlConnection
 	 * @param jobId
@@ -406,7 +406,7 @@ public class JobOpener implements Function<String, String> {
 	private boolean wasJobReceivedByAnyWorker(Connection sqlConnection, int jobId) throws SQLException {
 		boolean result = false;
 		// Prepare SQL statement
-		String sqlStringToPrepare = "SELECT `worker_id` FROM `jobs_received_workers` WHERE `job_id`=?";
+		String sqlStringToPrepare = "SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id`=?";
 		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
 		preparedStatement.setInt(1, jobId);
 		logPreparedStatement(preparedStatement);
@@ -421,7 +421,7 @@ public class JobOpener implements Function<String, String> {
 		if (result) {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE "
 					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_offered_workers` WHERE `worker_id` NOT IN (SELECT"
-					+ " `worker_id` FROM `jobs_received_workers` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER'"
+					+ " `worker_id` FROM `jobs_receipts` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER'"
 					+ " AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
 		} else {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE "
@@ -456,18 +456,18 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			result = true;
 		}
-		// Those who received the offer, but did not accept it, and have no status
-		// changes in previous 10 seconds, should be ONLINE to get a new offer
+		// Those who received the offer, but did not accept or reject it, and have no
+		// status changes in previous 10 seconds, should be ONLINE to get a new offer
 		String sqlStringToBePrepared = "";
 		if (result) {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_received_workers` WHERE `worker_id` NOT IN "
-					+ "(SELECT `worker_id` FROM `job_worker` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER'"
-					+ " AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
+					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `worker_id` NOT IN (SELECT "
+					+ "`worker_id` FROM `job_worker` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
+					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
 		} else {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_received_workers` WHERE `job_id=`" + jobId + ") "
-					+ "AND `status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
+					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id=`" + jobId + ") AND "
+					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
 		}
 		PreparedStatement preparedSqlStatement = sqlConnection.prepareStatement(sqlStringToBePrepared);
 		logPreparedStatement(preparedSqlStatement);
