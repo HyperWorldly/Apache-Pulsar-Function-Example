@@ -1,0 +1,26 @@
+{
+	"jobOpenRequest": {
+		"consumerId": 1,
+		"serviceId": 1,
+		"expertiseLevelId": 2,
+		"requestedOn": "2020-09-11 21:16:29",
+		"location": [
+			31.501414999999998,
+			74.41178833333333
+		],
+		"requiredTaskIdsAndQuantities": [
+			[
+				100005,
+				3
+			],
+			[
+				100006,
+				6
+			],
+			[
+				100009,
+				7
+			]
+		]
+	}
+}
