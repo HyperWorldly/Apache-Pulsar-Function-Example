@@ -1,0 +1,14 @@
+# IntelliJ artifacts
+*.iml
+.idea/
+
+# Java artifacts
+.classpath
+.project
+.settings/
+target/
+
+# VS Code artifacts
+.vscode/
+
+.factorypath
