@@ -620,8 +620,8 @@ public class JobOpener implements Function<String, String> {
 		// SQL variables
 		Connection processSqlConnection = null;
 		try {
+			LOG.info("RECEIVED INPUT: {}", input.toString());
 			// Load variables
-			JsonObject jobAsJsonObject = null;
 			int jobId, consumerId, serviceId, expertiseLevelId;
 			double latitude, longitude;
 			String requestedOn = null;
@@ -629,7 +629,7 @@ public class JobOpener implements Function<String, String> {
 			// Parse the input message
 			LOG.info("STARTED PARSING NEW JOB REQUEST");
 			JsonObject inputAsJson = new JsonParser().parse(input).getAsJsonObject();
-			jobAsJsonObject = inputAsJson.getAsJsonObject("jobOpenRequest");
+			final JsonObject jobAsJsonObject = inputAsJson.getAsJsonObject("jobOpenRequest");
 			consumerId = jobAsJsonObject.get("consumerId").getAsInt();
 			serviceId = jobAsJsonObject.get("serviceId").getAsInt();
 			expertiseLevelId = jobAsJsonObject.get("expertiseLevelId").getAsInt();
