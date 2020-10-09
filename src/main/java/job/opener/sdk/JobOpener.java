@@ -701,7 +701,7 @@ public class JobOpener implements Function<String, String> {
 				// Save the worker IDs against job's id for future reference
 				saveWorkersAgainstJobOffer(processSqlConnection, jobId, workerIds);
 				// Prepare a job offer message containing the workerId and the jobId
-				JsonObject jobOffer = prepareJobOfferToSend(jobAsJsonObject, jobId);
+				JsonObject jobOffer = prepareJobOfferToSend(jobAsJsonObject, jobId, false);
 				// Send the job offer to each of the matching workers' topic
 				for (int workerId : workerIds) {
 					sendJsonToWorkerTopic(jobOffer, workerId, context);
@@ -711,6 +711,7 @@ public class JobOpener implements Function<String, String> {
 					@Override
 					public void run() {
 						try {
+							JsonObject jobOpenRequest = prepareJobOfferToSend(jobAsJsonObject, jobId, true);
 							// Get database connection
 							Connection receiptRunnableSqlConnection = getDatabaseConnection("RECEIPT RUNNABLE");
 							// Check if a sent job was marked as received
@@ -722,7 +723,7 @@ public class JobOpener implements Function<String, String> {
 								LOG.info(
 										"THE JOB HAS NOT BEEN MARKED RECEIVED BY ANY OF THE WORKERS IT WAS SENT TO. REPEATING PROCESS.");
 								// Repeat the whole process with the sent offer as input
-								process(jobOffer.toString(), context);
+								process(jobOpenRequest.toString(), context);
 							} else {
 								LOG.info("THE JOB HAS BEEN MARKED RECEIVED BY ONE OF THE WORKERS IT WAS SENT TO.");
 								// Build a future Runnable that checks for job acceptance
@@ -743,7 +744,8 @@ public class JobOpener implements Function<String, String> {
 											if (!jobAccepted) {
 												LOG.info("THE JOB HAS NOT BEEN MARKED ACCEPTED BY ANY OF THE WORKERS IT"
 														+ " WAS SENT TO. REPEATING PROCESS.");
-												process(jobOffer.toString(), context);
+												process(jobOpenRequest.toString(),
+														context);
 											} else {
 												LOG.info(
 														"THE JOB HAS BEEN MARKED ACCEPTED BY THE WORKER IT WAS SENT TO.");
