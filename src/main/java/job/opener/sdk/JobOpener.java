@@ -376,10 +376,12 @@ public class JobOpener implements Function<String, String> {
 	 * 
 	 * @param jobAsJsonObject
 	 * @param jobId
+	 * @param toProcessAgain
 	 * @return
 	 * @throws Exception
 	 */
-	private JsonObject prepareJobOfferToSend(JsonObject jobAsJsonObject, int jobId) throws Exception {
+	private JsonObject prepareJobOfferToSend(JsonObject jobAsJsonObject, int jobId, boolean toProcessAgain)
+			throws Exception {
 		// Remove (any/old) jobId if present
 		if (jobAsJsonObject.has("jobId")) {
 			jobAsJsonObject.remove("jobId");
@@ -388,7 +390,11 @@ public class JobOpener implements Function<String, String> {
 		jobAsJsonObject.addProperty("jobId", jobId);
 		// Create new (offer) container JSON object
 		JsonObject offerAsJson = new JsonObject();
-		offerAsJson.add("instantJobOffer", jobAsJsonObject);
+		if (toProcessAgain) {
+			offerAsJson.add("jobOpenRequest", jobAsJsonObject);
+		} else {
+			offerAsJson.add("instantJobOffer", jobAsJsonObject);
+		}
 		// Get job JSON as string
 		LOG.info("JOB OFFER TO SEND {}", offerAsJson.toString());
 		return offerAsJson;
