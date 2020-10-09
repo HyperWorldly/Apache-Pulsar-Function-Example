@@ -469,11 +469,11 @@ public class JobOpener implements Function<String, String> {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
 					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `worker_id` NOT IN (SELECT "
 					+ "`worker_id` FROM `job_worker` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
-					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
+					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		} else {
 			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id=`" + jobId + ") AND "
-					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 10 SECOND))";
+					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id`=" + jobId + ") AND "
+					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		}
 		PreparedStatement preparedSqlStatement = sqlConnection.prepareStatement(sqlStringToBePrepared);
 		logPreparedStatement(preparedSqlStatement);
