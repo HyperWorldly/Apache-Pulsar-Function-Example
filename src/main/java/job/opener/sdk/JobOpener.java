@@ -683,7 +683,7 @@ public class JobOpener implements Function<String, String> {
 				// Parse the sent offer message
 				jobId = jobAsJsonObject.get("jobId").getAsInt();
 				int totalElapsedTime = getTotalElapsedTime(requestedOn);
-				if (totalElapsedTime <= 33) {
+				if (totalElapsedTime <= 36) {
 					LOG.info(
 							"jobId IS {}, consumerId IS {}, serviceId IS {}, expertiseLevelId IS {}, "
 									+ "requestedOn IS {}, latitude IS {}, longitude IS {}, requiredTaskIds ARE {}",
@@ -693,7 +693,7 @@ public class JobOpener implements Function<String, String> {
 					workerIds = findNewNearestOnlineWorkers(processSqlConnection, requiredTaskIds, expertiseLevelId,
 							latitude, longitude, radius, jobId);
 				} else {
-					failureReason = "33 SECONDS HAVE ELAPSED, AND NO WORKER AVAILABLE NEARBY ACCEPTED THE JOB.";
+					failureReason = "36 SECONDS HAVE ELAPSED, AND NO WORKER AVAILABLE NEARBY ACCEPTED THE JOB.";
 				}
 			}
 			// Ensure that we have some worker IDs
