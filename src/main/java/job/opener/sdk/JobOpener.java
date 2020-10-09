@@ -555,7 +555,7 @@ public class JobOpener implements Function<String, String> {
 	 */
 	private int getWorkerForJob(Connection sqlConnection, int jobId) throws SQLException {
 		// Prepare SQL statement
-		String sqlStringToPrepare = "SELECT `worker_id` FROM `jobs_worker` WHERE `job_id`=?";
+		String sqlStringToPrepare = "SELECT `worker_id` FROM `job_worker` WHERE `job_id`=?";
 		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
 		preparedStatement.setInt(1, jobId);
 		logPreparedStatement(preparedStatement);
