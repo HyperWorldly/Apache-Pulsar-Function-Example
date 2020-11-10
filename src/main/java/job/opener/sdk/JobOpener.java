@@ -188,8 +188,7 @@ public class JobOpener implements Function<String, String> {
 	/**
 	 * Saves required task IDs and respective quantities against job ID in
 	 * `jobs_tasks_and_quantities` table in database.
-	 * 
-	 * @param processSqlConnection
+	 *
 	 * @param jobId
 	 * @param requiredTaskIds
 	 */
