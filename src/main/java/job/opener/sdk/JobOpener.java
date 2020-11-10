@@ -333,7 +333,7 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Saves a worker ID against a job ID in `jobs_offered_workers` table in the
+	 * Saves a worker ID against a job ID in `jobs_offers` table in the
 	 * database.
 	 * 
 	 * @param sqlConnection
@@ -344,7 +344,7 @@ public class JobOpener implements Function<String, String> {
 	private void saveWorkersAgainstJobOffer(Connection sqlConnection, int jobId, List<Integer> workerIds)
 			throws SQLException {
 		// Prepare SQL statement
-		String table = "jobs_offered_workers";
+		String table = "jobs_offers";
 		String columns = "job_id, worker_id, added_on";
 		for (int workerId : workerIds) {
 			String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, NOW())";
@@ -660,7 +660,8 @@ public class JobOpener implements Function<String, String> {
 						consumerId, serviceId, expertiseLevelId, requestedOn, latitude, longitude, requiredTaskIds,
 						requiredTaskQuantities);
 				// Save the new job and get an id for it
-				jobId = saveNewJob(processSqlConnection, requestedOn);
+				jobId = saveNewJob(processSqlConnection);
+				// TODO: Save requested on somewhere and mind that none of the jobs_status_logs have been handled yet.
 				// Save the job against consumer
 				saveNewJobConsumer(processSqlConnection, jobId, consumerId);
 				// Save the required expertiseLevel against job
