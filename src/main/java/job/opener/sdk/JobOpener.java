@@ -45,10 +45,7 @@ import com.google.gson.JsonParser;
  * @author Khubaib Shabbir
  */
 public class JobOpener implements Function<String, String> {
-	// Database details
-	static final String DB_URL = "jdbc:mysql://localhost/hyperworldly?serverTimezone=UTC";
-	static final String USERNAME = "hyperworldly";
-	static final String PASSWORD = "bPpXfhoT2ZkzQOFP";
+
 	// The Logger
 	Logger LOG = null;
 
@@ -60,6 +57,10 @@ public class JobOpener implements Function<String, String> {
 	 * @throws SQLException
 	 */
 	private Connection getDatabaseConnection(String origin) throws SQLException {
+		// Database details
+		final String DB_URL = "jdbc:mysql://localhost/hyperworldly?serverTimezone=UTC";
+		final String USERNAME = "hyperworldly";
+		final String PASSWORD = "bPpXfhoT2ZkzQOFP";
 		// Open SQL connection
 		Connection sqlConnection = DriverManager.getConnection(DB_URL, USERNAME, PASSWORD);
 		LOG.info("{} CONNECTED TO DATABASE.", origin);
@@ -600,7 +601,7 @@ public class JobOpener implements Function<String, String> {
 
 	/**
 	 * The process method gets invoked every time a message is received on the input
-	 * topic (i.e., instant-jobs-opener-input).
+	 * topic (i.e., job-opener-input).
 	 */
 	@Override
 	public String process(String input, Context context) {
