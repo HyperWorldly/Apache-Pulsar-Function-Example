@@ -102,21 +102,16 @@ public class JobOpener implements Function<String, String> {
 	 * Saves new job to the `jobs` table in the database.
 	 * 
 	 * @param sqlConnection
-	 * @param serviceCategoryId
-	 * @param serviceLevelId
-	 * @param consumerId
-	 * @param requestedOn
 	 * @return
 	 * @throws SQLException
 	 */
-	private int saveNewJob(Connection sqlConnection, String requestedOn) throws SQLException {
+	private int saveNewJob(Connection sqlConnection) throws SQLException {
 		String table = "jobs";
-		String columns = "status, requested_on, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES ('OPEN', ?, NOW())";
+		String columns = "status, added_on";
+		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES ('OPENED', NOW())";
 		// Prepare SQL statement
 		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
 				Statement.RETURN_GENERATED_KEYS);
-		preparedStatement.setString(1, requestedOn);
 		logPreparedStatement(preparedStatement);
 		// Execute prepared statement
 		preparedStatement.execute();
