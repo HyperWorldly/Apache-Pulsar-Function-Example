@@ -50,6 +50,30 @@ public class JobOpener implements Function<String, String> {
 	 * @param origin
 	 * @return
 	 * @throws SQLException
+	 * Provides configuration for creating instance(s) of this function for local
+	 * run mode, and can be removed or commented safely should you require to run
+	 * the function in cluster mode.
+	 *
+	 * @param args Any arguments for the main function.
+	 * @throws Exception Any exception faced.
+	 */
+	public static void main(String[] args) throws Exception {
+		// Create new local run configuration object for the Pulsar Function
+		FunctionConfig functionConfig = new FunctionConfig();
+		// Update configuration
+		functionConfig.setName("JO");
+		functionConfig.setInputs(Collections.singleton("job-opener-input"));
+		// functionConfig.setOutput("job-opener-output"); // Because the function's
+		// process() is returning 'null' output
+		functionConfig.setLogTopic("job-opener-logs");
+		functionConfig.setClassName(JobOpener.class.getName());
+		functionConfig.setRuntime(FunctionConfig.Runtime.JAVA);
+		functionConfig.setProcessingGuarantees(FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE);
+		functionConfig.setParallelism(1);
+		// Build a local runner
+		LocalRunner localRunner = LocalRunner.builder().functionConfig(functionConfig).build();
+		localRunner.start(false);
+	}
 	 */
 	private Connection getDatabaseConnection(String origin) throws SQLException {
 		// Database details
