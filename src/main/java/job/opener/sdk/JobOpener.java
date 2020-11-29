@@ -1,11 +1,17 @@
 package job.opener.sdk;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.common.functions.FunctionConfig;
+import org.apache.pulsar.functions.LocalRunner;
+import org.apache.pulsar.functions.api.Context;
+import org.apache.pulsar.functions.api.Function;
+import org.slf4j.Logger;
+
+import java.sql.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -15,18 +21,6 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.common.functions.FunctionConfig;
-import org.apache.pulsar.functions.LocalRunner;
-import org.apache.pulsar.functions.api.Context;
-import org.apache.pulsar.functions.api.Function;
-import org.slf4j.Logger;
-
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 /**
  * Saves (to database all the details of) a new (instant) job request from a
@@ -41,521 +35,509 @@ import com.google.gson.JsonParser;
  * with success (containing job and worker IDs) or with failure (containing
  * reason).
  *
+ * @author AbdulWahhaab Aa'waan
  * @author Hares Mahmood
- * @author Khubaib Shabbir
+ * @author Khubaeb Shabbeer
  */
 public class JobOpener implements Function<String, String> {
 
-	// The Logger
+	// Define a 'null' logger
 	Logger LOG = null;
 
 	/**
-	 * Gets a database connection.
-	 * 
-	 * @param origin
-	 * @return
-	 * @throws SQLException
+	 * Provides configuration for creating instance(s) of this function for local
+	 * run mode, and can be removed or commented safely should you require to run
+	 * the function in cluster mode.
+	 *
+	 * @param args Any arguments for the main function.
+	 * @throws Exception Any exception faced.
 	 */
-	private Connection getDatabaseConnection(String origin) throws SQLException {
-		// Database details
+	public static void main(String[] args) throws Exception {
+		// Create new local run configuration object for the Pulsar Function
+		FunctionConfig functionConfig = new FunctionConfig();
+		// Update configuration
+		functionConfig.setName("JO");
+		functionConfig.setInputs(Collections.singleton("job-opener-input"));
+		// functionConfig.setOutput("job-opener-output"); // Because the function's
+		// process() is returning 'null' output
+		functionConfig.setLogTopic("job-opener-logs");
+		functionConfig.setClassName(JobOpener.class.getName());
+		functionConfig.setRuntime(FunctionConfig.Runtime.JAVA);
+		functionConfig.setProcessingGuarantees(FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE);
+		functionConfig.setParallelism(1);
+		// Build a local runner
+		LocalRunner localRunner = LocalRunner.builder().functionConfig(functionConfig).build();
+		localRunner.start(false);
+	}
+
+	/**
+	 * Gets a new connection to the database.
+	 *
+	 * @param origin Either of PROCESS / RECEIPT RUNNABLE / ACCEPTANCE RUNNABLE,
+	 *               that needs the new connection.
+	 * @return A connection to the database.
+	 * @throws SQLException Any SQL exception faced.
+	 */
+	private Connection getNewDatabaseConnection(String origin) throws SQLException {
+		// Save database details
 		final String DB_URL = "jdbc:mysql://localhost/hyperworldly?serverTimezone=UTC";
 		final String USERNAME = "hyperworldly";
 		final String PASSWORD = "bPpXfhoT2ZkzQOFP";
-		// Open SQL connection
+		// Open new connection
 		Connection sqlConnection = DriverManager.getConnection(DB_URL, USERNAME, PASSWORD);
 		LOG.info("{} CONNECTED TO DATABASE.", origin);
 		return sqlConnection;
 	}
 
 	/**
-	 * Extracts the query from a prepared statement and logs it.
-	 * 
-	 * @param preparedStatement
+	 * Logs the query part from a Prepared Statement.
+	 *
+	 * @param preparedStatement Any prepared statement.
 	 */
-	private void logPreparedStatement(PreparedStatement preparedStatement) {
+	private void logQueryFromPreparedStatement(PreparedStatement preparedStatement) {
 		// Get SQL query from the statement
 		String preparedStatementAsString = preparedStatement.toString();
-		String preparedSqlQuery = preparedStatementAsString.substring(preparedStatementAsString.indexOf(":") + 2,
-				preparedStatementAsString.length());
-		LOG.info("EXECUTING {}", preparedSqlQuery);
+		String preparedSqlQuery = preparedStatementAsString.substring(preparedStatementAsString.indexOf(":") + 2);
+		LOG.info("QUERY IN THE PREPARED STATEMENT IS: {}", preparedSqlQuery);
 	}
 
 	/**
 	 * Prepares a comma-separated string, from an array of integers.
-	 * 
-	 * @param intArray
-	 * @return
+	 *
+	 * @param integerArray Any array of integers.
+	 * @return Integers (separated by commas) as string.
 	 */
-	private String commaSeparatedStringfromIntArray(int[] intArray) {
-		String commaSeparatedIntegersFromArray = "";
-		if (intArray.length > 0) {
+	private String makeCommaSeparatedStringFromIntArray(int[] integerArray) {
+		String commaSeparatedString;
+		commaSeparatedString = "";
+		if (integerArray.length > 0) {
 			StringBuilder sb = new StringBuilder();
-			for (int integer : intArray) {
+			for (int integer : integerArray) {
 				sb.append(integer).append(",");
 			}
-			commaSeparatedIntegersFromArray = sb.deleteCharAt(sb.length() - 1).toString();
+			commaSeparatedString = sb.deleteCharAt(sb.length() - 1).toString();
 		}
-		LOG.info("commaSeparatedIntegersFromArray ARE: {}", commaSeparatedIntegersFromArray);
-		return commaSeparatedIntegersFromArray;
+		LOG.info("COMMA-SEPARATED STRING PREPARED FROM INTEGER ARRAY IS: {}.", commaSeparatedString);
+		return commaSeparatedString;
 	}
 
 	/**
-	 * Saves new job to the `jobs` table in the database.
-	 * 
-	 * @param sqlConnection
-	 * @return
-	 * @throws SQLException
+	 * Saves a new job to the `job` table in database.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param consumerId    Consumer who requested the job.
+	 * @param proficiencyId Proficiency level required in the job.
+	 * @return DB ID for the saved job.
+	 * @throws Exception Any exception faced.
 	 */
-	private int saveNewJob(Connection sqlConnection) throws SQLException {
-		String table = "jobs";
-		String columns = "status, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES ('OPENED', NOW())";
-		// Prepare SQL statement
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
+	private int saveNewJob(Connection sqlConnection, int consumerId, int proficiencyId) throws Exception {
+		// Prepare 'insert job' statement
+		String insertJobQuery = "INSERT INTO `job` (`consumer_id`, `proficiency_id`, `status`, `added_on`) VALUES (?, ?,'OPENED', NOW())";
+		PreparedStatement jobStatement = sqlConnection.prepareStatement(insertJobQuery,
 				Statement.RETURN_GENERATED_KEYS);
-		logPreparedStatement(preparedStatement);
-		// Execute prepared statement
-		preparedStatement.execute();
-		// Get inserted id
+		jobStatement.setInt(1, consumerId);
+		jobStatement.setInt(2, proficiencyId);
+		logQueryFromPreparedStatement(jobStatement);
+		// Execute the statement
+		jobStatement.execute();
+		// Get and return generated id
 		int jobId = 0;
-		ResultSet resultSet = preparedStatement.getGeneratedKeys();
+		ResultSet resultSet = jobStatement.getGeneratedKeys();
 		if (resultSet.next()) {
 			jobId = resultSet.getInt(1);
 		}
-		LOG.info("SAVED JOB UNDER ID {} INTO {} TABLE", jobId, table);
+		LOG.info("SAVED JOB UNDER ID {} INTO `jobs` TABLE.", jobId);
 		return jobId;
 	}
 
 	/**
-	 * Saves consumer ID against job ID in `job_consumer` table in database.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @param consumerId
-	 * @throws SQLException
-	 */
-	private void saveNewJobConsumer(Connection sqlConnection, int jobId, int consumerId) throws SQLException {
-		String table = "job_consumer";
-		String columns = "job_id, consumer_id, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, NOW())";
-		// Prepare SQL statement
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
-				Statement.RETURN_GENERATED_KEYS);
-		preparedStatement.setInt(1, jobId);
-		preparedStatement.setInt(2, consumerId);
-		logPreparedStatement(preparedStatement);
-		// Execute the prepared statement
-		preparedStatement.execute();
-		// Get the inserted id
-		ResultSet resultSet = preparedStatement.getGeneratedKeys();
-		int generatedId = 0;
-		if (resultSet.next()) {
-			generatedId = resultSet.getInt(1);
-		}
-		LOG.info("SAVED CONSUMER AGAINST JOB UNDER ID {} INTO {} TABLE", generatedId, table);
-	}
-
-	/**
-	 * Saves expertise level ID against job ID in `job_expertise_level` table in
-	 * database.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @param expertiseLevelId
-	 * @throws SQLException
-	 */
-	private void saveNewJobExpertiseLevel(Connection sqlConnection, int jobId, int expertiseLevelId)
-			throws SQLException {
-		String table = "job_expertise_level";
-		String columns = "job_id, expertise_level_id, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, NOW())";
-		// Prepare SQL statement
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
-				Statement.RETURN_GENERATED_KEYS);
-		preparedStatement.setInt(1, jobId);
-		preparedStatement.setInt(2, expertiseLevelId);
-		logPreparedStatement(preparedStatement);
-		// Execute the prepared statement
-		preparedStatement.execute();
-		// Get the inserted id
-		ResultSet resultSet = preparedStatement.getGeneratedKeys();
-		int generatedId = 0;
-		if (resultSet.next()) {
-			generatedId = resultSet.getInt(1);
-		}
-		LOG.info("SAVED EXPERTISE LEVEL AGAINST JOB UNDER ID {} INTO {} TABLE", generatedId, table);
-	}
-
-	/**
-	 * Saves required task IDs and respective quantities against job ID in
-	 * `jobs_tasks_and_quantities` table in database.
+	 * Saves required tasks for a job with respective quantities in `jobs_task`
+	 * table in database.
 	 *
-	 * @param jobId
-	 * @param requiredTaskIds
+	 * @param sqlConnection          SQL connection to use.
+	 * @param jobId                  Job against which tasks and quantities are to
+	 *                               be saved.
+	 * @param requiredTaskIds        Tasks required in a job as array, in the same
+	 *                               order as in quantities.
+	 * @param requiredTaskQuantities Quantities of each task in a job as array, in
+	 *                               the same order as in tasks.
 	 */
-	private void saveNewJobTasksAndQuantities(Connection sqlConnection, int jobId, int[] requiredTaskIds,
+	private void saveJobTasksAndQuantities(Connection sqlConnection, int jobId, int[] requiredTaskIds,
 			int[] requiredTaskQuantities) throws SQLException {
-		String table = "jobs_tasks_and_quantities";
-		String columns = "job_id, service_category_task_id, quantity, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, ?, NOW())";
+		// Prepare 'insert job task' statement
+		String insertJobTaskQuery = "INSERT INTO `jobs_task` (`job_id`, `task_id`, `quantity`, `added_on`) VALUES"
+				+ " (?, ?, ?, NOW())";
+		PreparedStatement jobTaskStatement = sqlConnection.prepareStatement(insertJobTaskQuery,
+				Statement.RETURN_GENERATED_KEYS);
 		for (int i = 0; i < requiredTaskIds.length; i++) {
-			// Prepare SQL statement
-			PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
-					Statement.RETURN_GENERATED_KEYS);
-			preparedStatement.setInt(1, jobId);
-			preparedStatement.setInt(2, requiredTaskIds[i]);
-			preparedStatement.setInt(3, requiredTaskQuantities[i]);
-			logPreparedStatement(preparedStatement);
-			// Execute the prepared statement
-			preparedStatement.execute();
-			// Get the inserted id
-			ResultSet resultSet = preparedStatement.getGeneratedKeys();
+			jobTaskStatement.setInt(1, jobId);
+			jobTaskStatement.setInt(2, requiredTaskIds[i]);
+			jobTaskStatement.setInt(3, requiredTaskQuantities[i]);
+			logQueryFromPreparedStatement(jobTaskStatement);
+			// Execute the statement
+			jobTaskStatement.execute();
+			// Get generated id
+			ResultSet resultSet = jobTaskStatement.getGeneratedKeys();
 			int generatedId = 0;
 			if (resultSet.next()) {
 				generatedId = resultSet.getInt(1);
 			}
-			LOG.info("SAVED REQUIRED TASK AGAINST JOB UNDER ID {} INTO {} TABLE", generatedId, table);
+			LOG.info("SAVED REQUIRED TASK UNDER ID {} AGAINST JOB ID {} INTO `jobs_task` TABLE", generatedId, jobId);
 		}
 	}
 
 	/**
-	 * Saves location against job ID in `job_location` table in database.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @param latitude
-	 * @param longitude
-	 * @throws SQLException
+	 * Saves location for a job in `job_location` table in database.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job against which location is to be saved.
+	 * @param latitude      Latitude part of the job location's coordinates.
+	 * @param longitude     Longitude part of the job location's coordinates.
+	 * @throws SQLException Any SQL exception faced.
 	 */
-	private void saveNewJobLocation(Connection sqlConnection, int jobId, double latitude, double longitude)
+	private void saveJobLocation(Connection sqlConnection, int jobId, double latitude, double longitude)
 			throws SQLException {
-		// Prepare SQL statement
-		String table = "job_location";
-		String columns = "job_id, latitude, longitude, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, ?, NOW())";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
+		// Prepare 'insert job location' statement
+		String insertJobLocationQuery = "INSERT INTO `job_location` (`job_id`, `latitude`, `longitude`, `added_on`) "
+				+ "VALUES (?, ?, ?, NOW())";
+		PreparedStatement jobLocationStatement = sqlConnection.prepareStatement(insertJobLocationQuery,
 				Statement.RETURN_GENERATED_KEYS);
-		preparedStatement.setInt(1, jobId);
-		preparedStatement.setDouble(2, latitude);
-		preparedStatement.setDouble(3, longitude);
-		logPreparedStatement(preparedStatement);
-		// Execute the prepared statement
-		preparedStatement.execute();
-		// Get the inserted id
-		ResultSet resultSet = preparedStatement.getGeneratedKeys();
+		jobLocationStatement.setInt(1, jobId);
+		jobLocationStatement.setDouble(2, latitude);
+		jobLocationStatement.setDouble(3, longitude);
+		logQueryFromPreparedStatement(jobLocationStatement);
+		// Execute the statement
+		jobLocationStatement.execute();
+		// Get generated id
+		ResultSet resultSet = jobLocationStatement.getGeneratedKeys();
 		int generatedId = 0;
 		if (resultSet.next()) {
 			generatedId = resultSet.getInt(1);
 		}
-		LOG.info("SAVED LOCATION AGAINST JOB UNDER ID {} INTO {} TABLE", generatedId, table);
+		LOG.info("SAVED LOCATION UNDER ID {} AGAINST JOB ID {} INTO `job_location` TABLE", generatedId, jobId);
 	}
 
 	/**
-	 * Finds nearest online workers for the required tasks, using Spherical Law of
-	 * Cosines and job location.
-	 * 
-	 * @param sqlConnection
-	 * @param requiredTaskIds
-	 * @param expertiseLevelId
-	 * @param latitude
-	 * @param longitude
-	 * @param radius
-	 * @return
-	 * @throws SQLException
-	 */
-	private List<Integer> findNearestOnlineWorkers(Connection sqlConnection, int[] requiredTaskIds,
-			int expertiseLevelId, double latitude, double longitude, int radius) throws SQLException {
-		String concatenatedRequiredTaskIds = commaSeparatedStringfromIntArray(requiredTaskIds);
-		// Set volumetric mean radius of Earth in meters
-		int volumetricMeanRadiusOfEarth = 6371008;
-		// Prepare SQL statement (using Spherical Law of Cosines get nearest worker)
-		String sqlStringToPrepare = "SELECT `worker_id`, (" + volumetricMeanRadiusOfEarth + " * ACOS(LEAST(1.0, COS("
-				+ "RADIANS(" + latitude + ")) * COS(RADIANS(`latitude`)) * COS(RADIANS(`longitude`) - RADIANS("
-				+ longitude + ")) + SIN(RADIANS(" + latitude + ")) * SIN(RADIANS(`latitude`))))) AS"
-				+ " `distance` FROM `worker_location` WHERE `worker_id` IN (SELECT `worker_id` FROM `worker_status` "
-				+ "WHERE `worker_id` IN (SELECT `worker_id` FROM `workers_tasks_and_expertise` WHERE "
-				+ "`service_category_task_id` IN (" + concatenatedRequiredTaskIds + ") AND `expertise_level_id`="
-				+ expertiseLevelId + " GROUP BY `worker_id` HAVING COUNT(DISTINCT `service_category_task_id`)="
-				+ requiredTaskIds.length + ") AND `status`='ONLINE') ORDER BY `distance` LIMIT 5";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		logPreparedStatement(preparedStatement);
-		// Execute the prepared statement and get result
-		ResultSet resultSet = preparedStatement.executeQuery();
-		List<Integer> returnedIds = new ArrayList<Integer>();
-		while (resultSet.next()) {
-			if (Integer.valueOf(resultSet.getInt(2)) < radius) {
-				returnedIds.add(Integer.valueOf(resultSet.getInt(1)));
-			}
-		}
-		return returnedIds;
-	}
-
-	/**
-	 * Finds nearest online workers for the required tasks, using Spherical Law of
-	 * Cosines and job location, excluding the workers who previously received this
-	 * job.
+	 * Finds online in-proximity workers having required proficiency for all the
+	 * tasks in a job.
 	 *
-	 * @param sqlConnection
-	 * @param requiredTaskIds
-	 * @param expertiseLevelId
-	 * @param latitude
-	 * @param longitude
-	 * @param radius
-	 * @param jobId
-	 * @return
-	 * @throws SQLException
+	 * @param sqlConnection   SQL connection to use.
+	 * @param requiredTaskIds Tasks required in a job.
+	 * @param proficiencyId   Proficiency level required in a job.
+	 * @param latitude        Latitude part of the job location coordinates.
+	 * @param longitude       Longitude part of the job location's coordinates.
+	 * @param radius          Radius (in meters) to determine proximity.
+	 * @return A list of online, in-proximity, and appropriately skilled workers for
+	 *         a job.
+	 * @throws SQLException Any SQL exception faced.
 	 */
-	private List<Integer> findNewNearestOnlineWorkers(Connection sqlConnection, int[] requiredTaskIds,
-			int expertiseLevelId, double latitude, double longitude, int radius, int jobId) throws SQLException {
-		String concatenatedRequiredTaskIds = commaSeparatedStringfromIntArray(requiredTaskIds);
+	private List<Integer> findAppropriateWorkers(Connection sqlConnection, int[] requiredTaskIds, int proficiencyId,
+			double latitude, double longitude, int radius) throws SQLException {
+		String concatenatedRequiredTaskIds = makeCommaSeparatedStringFromIntArray(requiredTaskIds);
 		// Set volumetric mean radius of Earth in meters
 		int volumetricMeanRadiusOfEarth = 6371008;
-		// Prepare SQL statement (using Spherical Law of Cosines get nearest worker)
-		String sqlStringToPrepare = "SELECT `worker_id`, (" + volumetricMeanRadiusOfEarth + " * ACOS(LEAST(1.0, COS("
-				+ "RADIANS(" + latitude + ")) * COS(RADIANS(`latitude`)) * COS(RADIANS(`longitude`) - RADIANS("
-				+ longitude + ")) + SIN(RADIANS(" + latitude + ")) * SIN(RADIANS(`latitude`))))) AS"
-				+ " `distance` FROM `worker_location` WHERE `worker_id` IN (SELECT `worker_id` FROM `worker_status` "
-				+ "WHERE `worker_id` IN (SELECT `worker_id` FROM `workers_tasks_and_expertise` WHERE "
-				+ "`service_category_task_id` IN (" + concatenatedRequiredTaskIds + ") AND `expertise_level_id`="
-				+ expertiseLevelId + " AND `worker_id` NOT IN (SELECT `worker_id` FROM `jobs_receipts` WHERE "
-				+ "`job_id`=" + jobId + ") GROUP BY `worker_id` HAVING COUNT(DISTINCT `service_category_task_id`)="
-				+ requiredTaskIds.length + ") AND `status`='ONLINE') ORDER BY `distance` LIMIT 5";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		logPreparedStatement(preparedStatement);
-		// Execute the prepared statement and get result
-		ResultSet resultSet = preparedStatement.executeQuery();
-		List<Integer> returnedIds = new ArrayList<Integer>();
+		// Prepare 'select appropriate workers' statement (using Spherical Law of
+		// Cosines to get nearest worker)
+		String selectAppropriateWorkersQuery = "SELECT `worker_id`, (" + volumetricMeanRadiusOfEarth
+				+ " * ACOS(LEAST(1.0, COS(" + "RADIANS(" + latitude
+				+ ")) * COS(RADIANS(`latitude`)) * COS(RADIANS(`longitude`) - RADIANS(" + longitude
+				+ ")) + SIN(RADIANS(" + latitude + ")) * SIN(RADIANS(`latitude`))))) AS `distance` FROM "
+				+ "`worker_location` WHERE `worker_id` IN (SELECT `id` FROM `worker` WHERE `id` IN (SELECT `worker_id`"
+				+ " FROM `workers_task` WHERE `task_id` IN (" + concatenatedRequiredTaskIds + ") AND `proficiency_id`="
+				+ proficiencyId + " GROUP BY `worker_id` HAVING COUNT(DISTINCT `task_id`)=" + requiredTaskIds.length
+				+ ") AND `status`='ONLINE') ORDER BY `distance` LIMIT 5";
+		PreparedStatement appropriateWorkersStatement = sqlConnection.prepareStatement(selectAppropriateWorkersQuery);
+		logQueryFromPreparedStatement(appropriateWorkersStatement);
+		// Execute the statement
+		ResultSet resultSet = appropriateWorkersStatement.executeQuery();
+		// Get and return result
+		List<Integer> appropriateWorkers = new ArrayList<Integer>();
 		while (resultSet.next()) {
-			if (Integer.valueOf(resultSet.getInt(2)) < radius) {
-				returnedIds.add(Integer.valueOf(resultSet.getInt(1)));
+			if (resultSet.getInt(2) < radius) {
+				appropriateWorkers.add(resultSet.getInt(1));
 			}
 		}
-		return returnedIds;
+		return appropriateWorkers;
 	}
 
 	/**
-	 * Saves a worker ID against a job ID in `jobs_offers` table in the
-	 * database.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @param workerIds
-	 * @throws SQLException
+	 * Finds online in-proximity workers having required proficiency for all the
+	 * tasks in a job, excluding the workers who previously received the offer for
+	 * this job.
+	 *
+	 * @param sqlConnection   SQL connection to use.
+	 * @param requiredTaskIds Tasks required in a job.
+	 * @param proficiencyId   Proficiency level required in a job.
+	 * @param latitude        Latitude part of the job location coordinates.
+	 * @param longitude       Longitude part of the job location's coordinates.
+	 * @param radius          Radius (in meters) to determine proximity.
+	 * @param jobId           Job against which an offer was sent previously.
+	 * @return A list of online, in-proximity, and appropriately skilled workers for
+	 *         a job.
+	 * @throws SQLException Any SQL exception faced.
 	 */
-	private void saveWorkersAgainstJobOffer(Connection sqlConnection, int jobId, List<Integer> workerIds)
-			throws SQLException {
-		// Prepare SQL statement
-		String table = "jobs_offers";
-		String columns = "job_id, worker_id, added_on";
-		for (int workerId : workerIds) {
-			String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, NOW())";
-			PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-			preparedStatement.setInt(1, jobId);
-			preparedStatement.setInt(2, workerId);
-			logPreparedStatement(preparedStatement);
-			// Execute the prepared statement
-			preparedStatement.execute();
-			String sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ON-OFFER', `last_updated_on`=NOW() "
-					+ "WHERE `worker_id`=?";
-			PreparedStatement preparedSqlStatement = sqlConnection.prepareStatement(sqlStringToBePrepared);
-			preparedSqlStatement.setInt(1, workerId);
-			logPreparedStatement(preparedSqlStatement);
-			// Execute the prepared statement
-			preparedSqlStatement.execute();
+	private List<Integer> findAppropriateWorkersAgain(Connection sqlConnection, int[] requiredTaskIds,
+			int proficiencyId, double latitude, double longitude, int radius, int jobId) throws SQLException {
+		String concatenatedRequiredTaskIds = makeCommaSeparatedStringFromIntArray(requiredTaskIds);
+		// Set volumetric mean radius of Earth in meters
+		int volumetricMeanRadiusOfEarth = 6371008;
+		// Prepare 'select appropriate workers again' statement (using Spherical Law of
+		// Cosines to get nearest to worker)
+		String selectAppropriateWorkersAgainQuery = "SELECT `worker_id`, (" + volumetricMeanRadiusOfEarth + " * ACOS"
+				+ "(LEAST(1.0, COS(RADIANS(" + latitude + ")) * COS(RADIANS(`latitude`)) * COS(RADIANS(`longitude`) - "
+				+ "RADIANS(" + longitude + ")) + SIN(RADIANS(" + latitude + ")) * SIN(RADIANS(`latitude`))))) AS "
+				+ "`distance` FROM `worker_location` WHERE `worker_id` IN (SELECT `id` FROM `worker` WHERE `id` IN "
+				+ "(SELECT `worker_id` FROM `workers_task` WHERE `task_id` IN (" + concatenatedRequiredTaskIds + ") "
+				+ "AND `proficiency_id`=" + proficiencyId + " AND `worker_id` NOT IN (SELECT `worker_id` FROM "
+				+ "`jobs_receivers` WHERE `job_id`=" + jobId + ") GROUP BY `worker_id` HAVING COUNT(DISTINCT `task_id`"
+				+ ")=" + requiredTaskIds.length + ") AND `status`='ONLINE') ORDER BY `distance` LIMIT 5";
+		PreparedStatement appropriateWorkersAgainStatement = sqlConnection
+				.prepareStatement(selectAppropriateWorkersAgainQuery);
+		logQueryFromPreparedStatement(appropriateWorkersAgainStatement);
+		// Execute the statement
+		ResultSet resultSet = appropriateWorkersAgainStatement.executeQuery();
+		// Get and return result
+		List<Integer> appropriateWorkers = new ArrayList<Integer>();
+		while (resultSet.next()) {
+			if (resultSet.getInt(2) < radius) {
+				appropriateWorkers.add(resultSet.getInt(1));
+			}
 		}
-		LOG.info("SAVED JOB AND THE WORKERS IT WAS OFFERED TO, IN {} TABLE", table);
+		return appropriateWorkers;
 	}
 
 	/**
-	 * Prepares as a JSON object a job offer - to send to the worker's topic.
-	 * 
-	 * @param jobAsJsonObject
-	 * @param jobId
-	 * @param toProcessAgain
-	 * @return
-	 * @throws Exception
+	 * Saves workers offered a job, in `jobs_offerees` table in the database.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job which has been offered.
+	 * @param workerIds     All the workers who were sent a job offer.
+	 * @throws SQLException Any SQL exception faced.
 	 */
-	private JsonObject prepareJobOfferToSend(JsonObject jobAsJsonObject, int jobId, boolean toProcessAgain)
-			throws Exception {
-		// Remove (any/old) jobId if present
+	private void saveJobOfferees(Connection sqlConnection, int jobId, List<Integer> workerIds) throws SQLException {
+		// Prepare 'insert job offeree' statement
+		String insertJobOfferee = "INSERT INTO `jobs_offerees` (`job_id`, `worker_id`, `added_on`) "
+				+ "VALUES (?, ?, NOW())";
+		PreparedStatement jobOffereeStatement = sqlConnection.prepareStatement(insertJobOfferee);
+		for (int aWorkerId : workerIds) {
+			jobOffereeStatement.setInt(1, jobId);
+			jobOffereeStatement.setInt(2, aWorkerId);
+			logQueryFromPreparedStatement(jobOffereeStatement);
+			// Execute the statement
+			jobOffereeStatement.execute();
+			// Prepare 'update worker status' statement
+			String updateWorkerStatus = "UPDATE `worker` SET `status`='ON-OFFER', `last_updated_on`=NOW() WHERE "
+					+ "`worker_id`=?";
+			PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatus);
+			workerStatusStatement.setInt(1, aWorkerId);
+			logQueryFromPreparedStatement(workerStatusStatement);
+			// Execute the statement
+			workerStatusStatement.execute();
+			// Prepare 'insert worker status log' statement
+			String insertWorkerStatusLog = "INSERT INTO `workers_statuses` (`worker_id`, `status`, `added_on`) VALUES"
+					+ " (?, ?, NOW())";
+			PreparedStatement workerStatusLogStatement = sqlConnection.prepareStatement(insertWorkerStatusLog);
+			workerStatusLogStatement.setInt(1, aWorkerId);
+			workerStatusLogStatement.setString(2, "ON-OFFER");
+			logQueryFromPreparedStatement(workerStatusLogStatement);
+			// Execute the statement
+			workerStatusLogStatement.execute();
+		}
+		LOG.info("SAVED JOB AND THE WORKERS IT WAS OFFERED TO, IN `jobs_offerees` TABLE");
+	}
+
+	/**
+	 * Prepares a job offer or open request, as a JSON object.
+	 *
+	 * @param jobAsJsonObject Job offer as a JSON object.
+	 * @param jobId           Job which has been offered.
+	 * @param jobRequest      Whether the offer is being processed for the first
+	 *                        time or again.
+	 * @return Offer as a JSON object.
+	 */
+	private JsonObject prepareOfferOrJobRequest(JsonObject jobAsJsonObject, int jobId, boolean jobRequest) {
+		// Remove (any/old) job id if present
 		if (jobAsJsonObject.has("jobId")) {
 			jobAsJsonObject.remove("jobId");
 		}
-		// Add the latest jobId and workerId
+		// Add the latest job id
 		jobAsJsonObject.addProperty("jobId", jobId);
-		// Create new (offer) container JSON object
-		JsonObject offerAsJson = new JsonObject();
-		if (toProcessAgain) {
-			offerAsJson.add("jobOpenRequest", jobAsJsonObject);
+		// Create new container JSON object
+		JsonObject jobOrOfferAsJson = new JsonObject();
+		if (jobRequest) {
+			jobOrOfferAsJson.add("jobOpenRequest", jobAsJsonObject);
 		} else {
-			offerAsJson.add("instantJobOffer", jobAsJsonObject);
+			jobOrOfferAsJson.add("instantJobOffer", jobAsJsonObject);
 		}
 		// Get job JSON as string
-		LOG.info("JOB OFFER TO SEND {}", offerAsJson.toString());
-		return offerAsJson;
+		LOG.info("JOB OR OFFER TO SEND IS {}", jobOrOfferAsJson.toString());
+		return jobOrOfferAsJson;
 	}
 
 	/**
-	 * Checks - in the `jobs_receipts` table in the database - if a job offer sent
-	 * to workers was actually received by any of them.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @return
-	 * @throws SQLException
+	 * Checks - in the `jobs_receivers` table in database - if a job offer sent to
+	 * workers was actually received by any of them.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job against which receipt is to be checked.
+	 * @return Whether or not any worker received the job.
+	 * @throws SQLException Any SQL exceptions faced.
 	 */
 	private boolean wasJobReceivedByAnyWorker(Connection sqlConnection, int jobId) throws SQLException {
-		boolean result = false;
+		boolean received = false;
 		// Prepare SQL statement
-		String sqlStringToPrepare = "SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id`=?";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		preparedStatement.setInt(1, jobId);
-		logPreparedStatement(preparedStatement);
+		String selectWorkerQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=?";
+		PreparedStatement workerStatement = sqlConnection.prepareStatement(selectWorkerQuery);
+		workerStatement.setInt(1, jobId);
+		logQueryFromPreparedStatement(workerStatement);
 		// Execute the prepared statement and get result
-		ResultSet resultSet = preparedStatement.executeQuery();
+		ResultSet resultSet = workerStatement.executeQuery();
 		if (resultSet.next()) {
-			result = true;
+			received = true;
 		}
 		// Those who did not receive the job offer and have no status changes in
 		// previous 2 second, are OFFLINE
-		String sqlStringToBePrepared = "";
-		if (result) {
-			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_offers` WHERE `worker_id` NOT IN (SELECT"
-					+ " `worker_id` FROM `jobs_receipts` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER'"
-					+ " AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
+		// TODO: The following query should update the worker status in the worker table
+		// and then write to the log too.
+		String updateWorkerStatusQuery;
+		if (received) {
+			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE"
+					+ " `worker_id` IN (SELECT `worker_id` FROM `jobs_offerees` WHERE `worker_id` NOT IN (SELECT"
+					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
+					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
 		} else {
-			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_offers` WHERE `job_id`=" + jobId + ") "
-					+ "AND `status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
+			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE"
+					+ " `worker_id` IN (SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=" + jobId + ") AND "
+					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
 		}
-		PreparedStatement preparedSqlStatement = sqlConnection.prepareStatement(sqlStringToBePrepared);
-		logPreparedStatement(preparedSqlStatement);
-		// Execute the prepared statement and get result
-		preparedSqlStatement.execute();
-		return result;
+		PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatusQuery);
+		logQueryFromPreparedStatement(workerStatusStatement);
+		// Execute the statement
+		workerStatusStatement.execute();
+		return received;
 	}
 
 	/**
-	 * Checks - in the `job_worker` table in the database - if a job offer sent to a
-	 * worker was actually accepted.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @return
-	 * @throws SQLException
+	 * Checks - in the `job` table in the database - if a job offer sent to a worker
+	 * was actually accepted.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job against which acceptance is to be checked.
+	 * @return Whether or not any worker accepted a job offer.
+	 * @throws SQLException Any SQL exception faced.
 	 */
 	private boolean wasJobAcceptedByAnyWorker(Connection sqlConnection, int jobId) throws SQLException {
-		boolean result = false;
+		boolean accepted = false;
 		// Prepare SQL statement
-		String sqlStringToPrepare = "SELECT `worker_id` FROM `job_worker` WHERE `job_id`=?";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		preparedStatement.setInt(1, jobId);
-		logPreparedStatement(preparedStatement);
+		String selectWorkerQuery = "SELECT `worker_id` FROM `job` WHERE `id`=?";
+		PreparedStatement workerStatement = sqlConnection.prepareStatement(selectWorkerQuery);
+		workerStatement.setInt(1, jobId);
+		logQueryFromPreparedStatement(workerStatement);
 		// Execute the prepared statement and get result
-		ResultSet resultSet = preparedStatement.executeQuery();
+		ResultSet resultSet = workerStatement.executeQuery();
 		if (resultSet.next()) {
-			result = true;
+			accepted = true;
 		}
 		// Those who received the offer, but did not accept or reject it, and have no
 		// status changes in previous 10 seconds, should be ONLINE to get a new offer
-		String sqlStringToBePrepared = "";
-		if (result) {
-			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `worker_id` NOT IN (SELECT "
-					+ "`worker_id` FROM `job_worker` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
+		// TODO: The following query should update the worker status in the worker table
+		// and then write to the log too.
+		String updateWorkerStatusQuery;
+		if (accepted) {
+			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
+					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receivers` WHERE `worker_id` NOT IN (SELECT "
+					+ "`worker_id` FROM `job` WHERE `id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
 					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		} else {
-			sqlStringToBePrepared = "UPDATE `worker_status` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receipts` WHERE `job_id`=" + jobId + ") AND "
+			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
+					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId + ") AND "
 					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		}
-		PreparedStatement preparedSqlStatement = sqlConnection.prepareStatement(sqlStringToBePrepared);
-		logPreparedStatement(preparedSqlStatement);
+		PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatusQuery);
+		logQueryFromPreparedStatement(workerStatusStatement);
 		// Execute the prepared statement and get result
-		preparedSqlStatement.execute();
-		return result;
+		workerStatusStatement.execute();
+		return accepted;
 	}
 
 	/**
-	 * Marks job status as FAILED in the `jobs` table in the database.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @throws SQLException
+	 * Marks job status as FAILED in the `job` table in database.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job that failed.
+	 * @throws SQLException Any SQL exception faced.
 	 */
 	private void markJobAsFailed(Connection sqlConnection, int jobId) throws SQLException {
 		// Prepare SQL statement
-		String table = "jobs";
-		String sqlStringToPrepare = "UPDATE " + table + " SET `status`=?, `last_updated_on`=NOW() WHERE `id`=?";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		preparedStatement.setString(1, "FAILED");
-		preparedStatement.setInt(2, jobId);
-		logPreparedStatement(preparedStatement);
+		String updateJobQuery = "UPDATE `job` SET `status`=?, `last_updated_on`=NOW() WHERE `id`=?";
+		PreparedStatement jobStatement = sqlConnection.prepareStatement(updateJobQuery);
+		jobStatement.setString(1, "FAILED");
+		jobStatement.setInt(2, jobId);
+		logQueryFromPreparedStatement(jobStatement);
 		// Execute the prepared statement
-		preparedStatement.executeUpdate();
-		LOG.info("UPDATED STATUS FOR JOB ID {} AS FAILED IN {} TABLE", jobId, table);
+		jobStatement.executeUpdate();
+		LOG.info("UPDATED STATUS FOR JOB ID {} AS FAILED IN `job` TABLE", jobId);
 	}
 
 	/**
-	 * Saves the failure details of a job in the `job_failure_detail` table in the
+	 * Saves the failure detail of a job in the `job_failure_detail` table in the
 	 * database
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @throws SQLException
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job that failed.
+	 * @throws SQLException Any SQL exception faced.
 	 */
 	private void saveJobFailureDetail(Connection sqlConnection, int jobId, String failureReason) throws SQLException {
 		// Prepare SQL statement
-		String table = "job_failure_detail";
-		String columns = "job_id, details, added_on";
-		String sqlStringToPrepare = "INSERT INTO " + table + " (" + columns + ") VALUES (?, ?, NOW())";
+		String sqlStringToPrepare = "INSERT INTO `job_failure_detail` (`job_id`, `details`, `added_on`) "
+				+ "VALUES (?, ?, NOW())";
 		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare,
 				Statement.RETURN_GENERATED_KEYS);
 		preparedStatement.setInt(1, jobId);
 		preparedStatement.setString(2, failureReason);
-		logPreparedStatement(preparedStatement);
+		logQueryFromPreparedStatement(preparedStatement);
 		// Execute the prepared statement
 		preparedStatement.execute();
-		// Get the inserted id
+		// Get generated id
 		ResultSet resultSet = preparedStatement.getGeneratedKeys();
 		int generatedId = 0;
 		if (resultSet.next()) {
 			generatedId = resultSet.getInt(1);
 		}
-		LOG.info("SAVED JOB FAILURE DETAILS UNDER ID {} INTO {} TABLE", generatedId, table);
+		LOG.info("SAVED JOB FAILURE DETAIL UNDER ID {} INTO `job` TABLE", generatedId);
 	}
 
 	/**
-	 * Gets the total elapsed time since a provided date and time string.
-	 * 
-	 * @return
-	 * @throws ParseException
+	 * Gets the total elapsed time (in seconds) since a provided date and time.
+	 *
+	 * @param timeFromPast Any date and time (from past) as string.
+	 * @return The difference between now and provided time (from past).
+	 * @throws ParseException Any exception faced while parsing.
 	 */
-	private int getTotalElapsedTime(String requestedOn) throws ParseException {
+	private int getTotalElapsedTimeInSeconds(String timeFromPast) throws ParseException {
 		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 		Date currentDate = new Date();
-		Date requestedOnDate = dateFormat.parse(requestedOn);
+		Date requestedOnDate = dateFormat.parse(timeFromPast);
 		long difference = currentDate.getTime() - requestedOnDate.getTime();
 		return (int) (difference / (1000));
 	}
 
 	/**
-	 * Gets the ID for the worker who accepted a job ID.
-	 * 
-	 * @param sqlConnection
-	 * @param jobId
-	 * @return
-	 * @throws SQLException
+	 * Gets the worker who accepted a job.
+	 *
+	 * @param sqlConnection SQL connection to use.
+	 * @param jobId         Job which has been accepted.
+	 * @return Worker who accepted the job.
+	 * @throws SQLException Any SQL exception faced.
 	 */
 	private int getWorkerForJob(Connection sqlConnection, int jobId) throws SQLException {
 		// Prepare SQL statement
-		String sqlStringToPrepare = "SELECT `worker_id` FROM `job_worker` WHERE `job_id`=?";
-		PreparedStatement preparedStatement = sqlConnection.prepareStatement(sqlStringToPrepare);
-		preparedStatement.setInt(1, jobId);
-		logPreparedStatement(preparedStatement);
+		String selectWorkerQuery = "SELECT `worker_id` FROM `job` WHERE `id`=?";
+		PreparedStatement workerStatement = sqlConnection.prepareStatement(selectWorkerQuery);
+		workerStatement.setInt(1, jobId);
+		logQueryFromPreparedStatement(workerStatement);
 		// Execute the prepared statement and get result
-		ResultSet resultSet = preparedStatement.executeQuery();
+		ResultSet resultSet = workerStatement.executeQuery();
 		int workerId = 0;
 		if (resultSet.next()) {
 			workerId = resultSet.getInt(1);
@@ -564,14 +546,14 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Sends a JSON message to the specified consumer's topic.
-	 * 
-	 * @param jsonMessage
-	 * @param consumerId
-	 * @param context
-	 * @throws PulsarClientException
+	 * Sends a message to a consumer.
+	 *
+	 * @param jsonMessage Message to send as JSON.
+	 * @param consumerId  Any consumer.
+	 * @param context     The 'Context' provided by Pulsar Functions SDK.
+	 * @throws PulsarClientException Any exception faced by Pulsar client.
 	 */
-	private void sendJsonToConsumerTopic(JsonObject jsonMessage, int consumerId, Context context)
+	private void sendMessageToConsumer(JsonObject jsonMessage, int consumerId, Context context)
 			throws PulsarClientException {
 		String consumerTopic = "consumer-" + consumerId;
 		context.newOutputMessage(consumerTopic, Schema.STRING).value(jsonMessage.toString()).send();
@@ -579,61 +561,71 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Sends a JSON message to the specified worker's topic.
-	 * 
-	 * @param jsonMessage
-	 * @param workerId
-	 * @param context
-	 * @throws PulsarClientException
+	 * Sends a message to a worker.
+	 *
+	 * @param jsonMessage Any JSON object.
+	 * @param workerId    Any worker's DB ID.
+	 * @param context     The 'Context' provided by 'Pulsar Functions SDK'.
+	 * @throws PulsarClientException Any exception faced by Pulsar (producer)
+	 *                               client.
 	 */
-	private void sendJsonToWorkerTopic(JsonObject jsonMessage, int workerId, Context context)
+	private void sendMessageToWorker(JsonObject jsonMessage, int workerId, Context context)
 			throws PulsarClientException {
+		// Define and initialize worker's topic
 		String workerTopic = "worker-" + workerId;
+		// Sends received message
 		context.newOutputMessage(workerTopic, Schema.STRING).value(jsonMessage.toString()).send();
-		LOG.info("SENT JSON MESSAGE TO WORKER TOPIC {}", workerTopic);
+		LOG.info("SENT MESSAGE TO WORKER TOPIC {}", workerTopic);
 	}
 
 	/**
-	 * The process method gets invoked every time a message is received on the input
-	 * topic (i.e., job-opener-input).
+	 * Processes every message received on this Pulsar Function's input topic.
+	 *
+	 * @param input   The message received.
+	 * @param context The 'Context' provided by 'Pulsar Functions SDK'.
+	 * @return The message to be written to the output topic, or null.
 	 */
 	@Override
 	public String process(String input, Context context) {
-		// Get process start nano time
+		// Save process start nano time
 		long processStartNanoseconds = System.nanoTime();
-		// Set up date format
+		// Save a date format
 		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-		// Get process start date and time
+		// Save (formatted) process start date and time
 		String processStartDateTime = dateFormat.format(new Date());
-		// Setup Logger
+		// Load the logger
 		LOG = context.getLogger();
-		// Get messageId (Is that the standard way to get it?)
+		// Save the received message
 		String message = context.getCurrentRecord().getMessage().toString();
+		// Save message ID (Is that the standard way to get it?)
 		String messageId = message.substring(message.lastIndexOf("@") + 1, message.length() - 1);
 		// Start logging
-		LOG.info("STARTED PROCESSING MESSAGE ID {} ON {}.", messageId, processStartDateTime);
-		// SQL variables
+		LOG.info("STARTED PROCESSING MESSAGE ID {} ON {} WITH INPUT {}.", messageId, processStartDateTime, input);
+		// Save a null connection
 		Connection processSqlConnection = null;
 		try {
-			LOG.info("RECEIVED INPUT: {}", input.toString());
-			// Load variables
-			int jobId, consumerId, serviceId, expertiseLevelId;
+			// Define job variables
+			int jobId, consumerId, proficiencyId;
 			double latitude, longitude;
-			String requestedOn = null;
+			String requestedOn;
 			String failureReason = null;
-			// Parse the input message
 			LOG.info("STARTED PARSING NEW JOB REQUEST");
+			// Save the input as JSON
 			JsonObject inputAsJson = new JsonParser().parse(input).getAsJsonObject();
+			// Extract and save job request as a JSON object
 			final JsonObject jobAsJsonObject = inputAsJson.getAsJsonObject("jobOpenRequest");
+			// Extract values from job object
 			consumerId = jobAsJsonObject.get("consumerId").getAsInt();
-			serviceId = jobAsJsonObject.get("serviceId").getAsInt();
-			expertiseLevelId = jobAsJsonObject.get("expertiseLevelId").getAsInt();
+			proficiencyId = jobAsJsonObject.get("proficiencyId").getAsInt();
 			requestedOn = jobAsJsonObject.get("requestedOn").getAsString();
+			// Extract job location as JSON array
 			JsonArray location = jobAsJsonObject.getAsJsonArray("location");
 			latitude = location.get(0).getAsDouble();
 			longitude = location.get(1).getAsDouble();
+			// Extract required tasks and quantities as JSON array
 			JsonArray requiredTaskIdsAndQuantities = jobAsJsonObject.getAsJsonArray("requiredTaskIdsAndQuantities");
 			int requiredTasksSize = requiredTaskIdsAndQuantities.size();
+			// Save tasks to an array
 			int[] requiredTaskIds = new int[requiredTasksSize];
 			for (int i = 0; i < requiredTasksSize; i++) {
 				JsonArray requiredTaskIdAndQuantity = (JsonArray) requiredTaskIdsAndQuantities.get(i);
@@ -641,6 +633,7 @@ public class JobOpener implements Function<String, String> {
 					requiredTaskIds[i] = requiredTaskIdAndQuantity.get(0).getAsInt();
 				}
 			}
+			// Save quantities to another array
 			int[] requiredTaskQuantities = new int[requiredTasksSize];
 			for (int i = 0; i < requiredTasksSize; i++) {
 				JsonArray requiredTaskIdAndQuantity = (JsonArray) requiredTaskIdsAndQuantities.get(i);
@@ -648,45 +641,41 @@ public class JobOpener implements Function<String, String> {
 					requiredTaskQuantities[i] = requiredTaskIdAndQuantity.get(1).getAsInt();
 				}
 			}
+			// Save the search radius in meters
 			int radius = 10000;
-			// Get SQL connection
-			processSqlConnection = getDatabaseConnection("PROCESS");
+			// Get DB connection
+			processSqlConnection = getNewDatabaseConnection("PROCESS");
+			// Create an empty list for workers who'll be sent the offer
 			List<Integer> workerIds = new ArrayList<Integer>();
-			// Check if the process() has received a new job
+			// Check if the message being processed is a new job offer
 			if (!input.contains("jobId")) {
 				LOG.info("THIS IS THE FIRST ATTEMPT ON PROCESSING MESSAGE ID {}.", messageId);
 				LOG.info(
-						"consumerId IS {}, serviceId IS {}, expertiseLevelId IS {}, requestedOn IS {}, latitude "
-								+ "IS {}, longitude IS {}, requiredTaskIds ARE {}, requiredTaskQuantities ARE {}",
-						consumerId, serviceId, expertiseLevelId, requestedOn, latitude, longitude, requiredTaskIds,
+						"consumerId IS {}, proficiencyId IS {}, requestedOn IS {}, latitude IS {}, longitude IS {}, "
+								+ "requiredTaskIds ARE {}, requiredTaskQuantities ARE {}",
+						consumerId, proficiencyId, requestedOn, latitude, longitude, requiredTaskIds,
 						requiredTaskQuantities);
-				// Save the new job and get an id for it
-				jobId = saveNewJob(processSqlConnection);
-				// TODO: Save requested on somewhere and mind that none of the jobs_status_logs have been handled yet.
-				// Save the job against consumer
-				saveNewJobConsumer(processSqlConnection, jobId, consumerId);
-				// Save the required expertiseLevel against job
-				saveNewJobExpertiseLevel(processSqlConnection, jobId, expertiseLevelId);
-				// Save the required tasks against job
-				saveNewJobTasksAndQuantities(processSqlConnection, jobId, requiredTaskIds, requiredTaskQuantities);
+				// Save the new job in database
+				jobId = saveNewJob(processSqlConnection, consumerId, proficiencyId);
+				// Save the required tasks with respective quantities against job
+				saveJobTasksAndQuantities(processSqlConnection, jobId, requiredTaskIds, requiredTaskQuantities);
 				// Save the location for the job
-				saveNewJobLocation(processSqlConnection, jobId, latitude, longitude);
-				// Get IDs of matching workers online nearby
-				workerIds = findNearestOnlineWorkers(processSqlConnection, requiredTaskIds, expertiseLevelId, latitude,
+				saveJobLocation(processSqlConnection, jobId, latitude, longitude);
+				// Get appropriate workers to offer the job to
+				workerIds = findAppropriateWorkers(processSqlConnection, requiredTaskIds, proficiencyId, latitude,
 						longitude, radius);
 			} else {
 				LOG.info("THIS IS A REPEAT ATTEMPT ON PROCESSING MESSAGE ID {}", messageId);
 				// Parse the sent offer message
 				jobId = jobAsJsonObject.get("jobId").getAsInt();
-				int totalElapsedTime = getTotalElapsedTime(requestedOn);
+				int totalElapsedTime = getTotalElapsedTimeInSeconds(requestedOn);
 				if (totalElapsedTime <= 36) {
 					LOG.info(
-							"jobId IS {}, consumerId IS {}, serviceId IS {}, expertiseLevelId IS {}, "
+							"jobId IS {}, consumerId IS {}, proficiencyId IS {}, "
 									+ "requestedOn IS {}, latitude IS {}, longitude IS {}, requiredTaskIds ARE {}",
-							jobId, consumerId, serviceId, expertiseLevelId, requestedOn, latitude, longitude,
-							requiredTaskIds);
+							jobId, consumerId, proficiencyId, requestedOn, latitude, longitude, requiredTaskIds);
 					// Get IDs of new matching workers online nearby
-					workerIds = findNewNearestOnlineWorkers(processSqlConnection, requiredTaskIds, expertiseLevelId,
+					workerIds = findAppropriateWorkersAgain(processSqlConnection, requiredTaskIds, proficiencyId,
 							latitude, longitude, radius, jobId);
 				} else {
 					failureReason = "36 SECONDS HAVE ELAPSED, AND NO WORKER AVAILABLE NEARBY ACCEPTED THE JOB.";
@@ -695,30 +684,31 @@ public class JobOpener implements Function<String, String> {
 			// Ensure that we have some worker IDs
 			if (!workerIds.isEmpty()) {
 				// Save the worker IDs against job's id for future reference
-				saveWorkersAgainstJobOffer(processSqlConnection, jobId, workerIds);
+				saveJobOfferees(processSqlConnection, jobId, workerIds);
 				// Prepare a job offer message containing the workerId and the jobId
-				JsonObject jobOffer = prepareJobOfferToSend(jobAsJsonObject, jobId, false);
+				JsonObject jobOffer = prepareOfferOrJobRequest(jobAsJsonObject, jobId, false);
 				// Send the job offer to each of the matching workers' topic
-				for (int workerId : workerIds) {
-					sendJsonToWorkerTopic(jobOffer, workerId, context);
+				for (int aWorkerId : workerIds) {
+					sendMessageToWorker(jobOffer, aWorkerId, context);
 				}
 				// Build a future Runnable that checks for job receipt
 				Runnable receiptRunnable = new Runnable() {
 					@Override
 					public void run() {
 						try {
-							JsonObject jobOpenRequest = prepareJobOfferToSend(jobAsJsonObject, jobId, true);
 							// Get database connection
-							Connection receiptRunnableSqlConnection = getDatabaseConnection("RECEIPT RUNNABLE");
+							Connection receiptRunnableSqlConnection = getNewDatabaseConnection("RECEIPT RUNNABLE");
 							// Check if a sent job was marked as received
 							boolean jobReceived = wasJobReceivedByAnyWorker(receiptRunnableSqlConnection, jobId);
 							// Close database connection
 							receiptRunnableSqlConnection.close();
 							LOG.info("CLOSED RECEIPT RUNNABLE DATABASE CONNECTION.");
+							// Prepare job open request
+							JsonObject jobOpenRequest = prepareOfferOrJobRequest(jobAsJsonObject, jobId, true);
 							if (!jobReceived) {
-								LOG.info(
-										"THE JOB HAS NOT BEEN MARKED RECEIVED BY ANY OF THE WORKERS IT WAS SENT TO. REPEATING PROCESS.");
-								// Repeat the whole process with the sent offer as input
+								LOG.info("THE JOB HAS NOT BEEN MARKED RECEIVED BY ANY OF THE WORKERS IT WAS SENT TO. "
+										+ "REPEATING PROCESS.");
+								// Repeat the whole process with
 								process(jobOpenRequest.toString(), context);
 							} else {
 								LOG.info("THE JOB HAS BEEN MARKED RECEIVED BY ONE OF THE WORKERS IT WAS SENT TO.");
@@ -728,9 +718,9 @@ public class JobOpener implements Function<String, String> {
 									public void run() {
 										try {
 											// Get database connection
-											Connection acceptanceRunnableSqlConnection = getDatabaseConnection(
+											Connection acceptanceRunnableSqlConnection = getNewDatabaseConnection(
 													"ACCEPTANCE RUNNABLE");
-											// Check if a sent job was marked as accepted
+											// Check if a sent offer was marked as accepted
 											boolean jobAccepted = wasJobAcceptedByAnyWorker(
 													acceptanceRunnableSqlConnection, jobId);
 											int workerId = getWorkerForJob(acceptanceRunnableSqlConnection, jobId);
@@ -740,24 +730,23 @@ public class JobOpener implements Function<String, String> {
 											if (!jobAccepted) {
 												LOG.info("THE JOB HAS NOT BEEN MARKED ACCEPTED BY ANY OF THE WORKERS IT"
 														+ " WAS SENT TO. REPEATING PROCESS.");
-												process(jobOpenRequest.toString(),
-														context);
+												process(jobOpenRequest.toString(), context);
 											} else {
-												LOG.info(
-														"THE JOB HAS BEEN MARKED ACCEPTED BY THE WORKER IT WAS SENT TO.");
+												LOG.info("THE JOB HAS BEEN MARKED ACCEPTED BY THE WORKER IT WAS "
+														+ "SENT TO.");
 												// Send SUCCESS as response with jobId and the workerId to track
 												// "jobOpenResponse": {
 												// // "status": "SUCCESS",
 												// // "jobId": jobId,
 												// // "workerId": workerId
 												// }
+												JsonObject jobOpenResponseBody = new JsonObject();
+												jobOpenResponseBody.addProperty("status", "SUCCESS");
+												jobOpenResponseBody.addProperty("jobId", jobId);
+												jobOpenResponseBody.addProperty("workerId", workerId);
 												JsonObject jobOpenResponse = new JsonObject();
-												jobOpenResponse.addProperty("status", "SUCCESS");
-												jobOpenResponse.addProperty("jobId", jobId);
-												jobOpenResponse.addProperty("workerId", workerId);
-												JsonObject newJobSuccess = new JsonObject();
-												newJobSuccess.add("jobOpenResponse", jobOpenResponse);
-												sendJsonToConsumerTopic(newJobSuccess, consumerId, context);
+												jobOpenResponse.add("jobOpenResponse", jobOpenResponseBody);
+												sendMessageToConsumer(jobOpenResponse, consumerId, context);
 												LOG.info("CONSUMER INFORMED OF THE JOB'S SUCCESS. TAKING NO FURTHER "
 														+ "ACTIONS.");
 											}
@@ -791,13 +780,6 @@ public class JobOpener implements Function<String, String> {
 				scheduler.shutdown();
 				LOG.info("EXECUTION SCHEDULER WAS SHUTDOWN AFTER SCHEDULING RECEIPT RUNNABLE.");
 			} else {
-				if (workerIds.isEmpty()) {
-					failureReason = "NO 'APPROPRIATELY SKILLED' WORKERS COULD BE FOUND 'ONLINE' IN '" + radius
-							+ "' METERS.";
-				} else {
-					failureReason = "YOU HAVE NOT BEATEN ME. A HUMAN FORGOT ABOUT TEACHING ME HOW TO DO "
-							+ "THAT. TO BE EXACT HE DID NOT IMAGINE THAT THIS WILL HAPPEN.";
-				}
 				LOG.info("JOB REQUEST FAILED BECAUSE {}", failureReason);
 				markJobAsFailed(processSqlConnection, jobId);
 				saveJobFailureDetail(processSqlConnection, jobId, failureReason);
@@ -806,12 +788,12 @@ public class JobOpener implements Function<String, String> {
 				// // "status": "FAILURE",
 				// // "reason": failureReason,
 				// }
+				JsonObject jobOpenResponseBody = new JsonObject();
+				jobOpenResponseBody.addProperty("status", "FAILURE");
+				jobOpenResponseBody.addProperty("reason", failureReason);
 				JsonObject jobOpenResponse = new JsonObject();
-				jobOpenResponse.addProperty("status", "FAILURE");
-				jobOpenResponse.addProperty("reason", failureReason);
-				JsonObject newJobFailure = new JsonObject();
-				newJobFailure.add("jobOpenResponse", jobOpenResponse);
-				sendJsonToConsumerTopic(newJobFailure, consumerId, context);
+				jobOpenResponse.add("jobOpenResponse", jobOpenResponseBody);
+				sendMessageToConsumer(jobOpenResponse, consumerId, context);
 				LOG.info("CONSUMER INFORMED OF THE JOB'S FAILURE, TAKING NO FURTHER ACTIONS.");
 			}
 		} catch (Exception e) {
@@ -833,30 +815,6 @@ public class JobOpener implements Function<String, String> {
 				((System.nanoTime() - processStartNanoseconds) / 1000000), processEndDateTime);
 		// Write no output to the output topic
 		return null;
-	}
-
-	/**
-	 * This main method is required for the local run mode, and can be removed or
-	 * commented safely should you require to run the function in cluster mode.
-	 *
-	 * @param args
-	 * @throws Exception
-	 */
-	public static void main(String[] args) throws Exception {
-		// Create new local run configuration object for the function
-		FunctionConfig functionConfig = new FunctionConfig();
-		// Update function configuration values
-		functionConfig.setName("JO");
-		functionConfig.setInputs(Collections.singleton("job-opener-input"));
-		functionConfig.setClassName(JobOpener.class.getName());
-		functionConfig.setRuntime(FunctionConfig.Runtime.JAVA);
-		// functionConfig.setOutput("job-opener-output"); // No output
-		functionConfig.setLogTopic("job-opener-logs");
-		functionConfig.setProcessingGuarantees(FunctionConfig.ProcessingGuarantees.EFFECTIVELY_ONCE);
-		functionConfig.setParallelism(1);
-		// Build a local runner
-		LocalRunner localRunner = LocalRunner.builder().functionConfig(functionConfig).build();
-		localRunner.start(false);
 	}
 
 }
