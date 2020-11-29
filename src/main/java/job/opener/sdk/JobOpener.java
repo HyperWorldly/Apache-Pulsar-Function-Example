@@ -35,8 +35,9 @@ import java.util.concurrent.TimeUnit;
  * with success (containing job and worker IDs) or with failure (containing
  * reason).
  *
+ * @author AbdulWahhaab Aa'waan
  * @author Hares Mahmood
- * @author Khubaib Shabbir
+ * @author Khubaeb Shabbeer
  */
 public class JobOpener implements Function<String, String> {
 
