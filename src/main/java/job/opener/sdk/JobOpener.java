@@ -1,17 +1,11 @@
 package job.opener.sdk;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.common.functions.FunctionConfig;
-import org.apache.pulsar.functions.LocalRunner;
-import org.apache.pulsar.functions.api.Context;
-import org.apache.pulsar.functions.api.Function;
-import org.slf4j.Logger;
-
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -21,6 +15,18 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Schema;
+import org.apache.pulsar.common.functions.FunctionConfig;
+import org.apache.pulsar.functions.LocalRunner;
+import org.apache.pulsar.functions.api.Context;
+import org.apache.pulsar.functions.api.Function;
+import org.slf4j.Logger;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /**
  * Saves (to database all the details of) a new (instant) job request from a
@@ -346,6 +352,11 @@ public class JobOpener implements Function<String, String> {
 		LOG.info("SAVED JOB AND THE WORKERS IT WAS OFFERED TO, IN `jobs_offerees` TABLE");
 	}
 
+	// TODO
+//	private void getJobOffrees() {
+//		
+//	}
+
 	/**
 	 * Prepares a job offer or open request, as a JSON object.
 	 *
@@ -375,6 +386,42 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
+	 * Updates status in `worker` table and logs it to "workers_statuses" table in
+	 * database.
+	 * 
+	 * 
+	 * @param sqlConnection SQL connection to use.
+	 * @param workerId      Any worker's DB ID.
+	 * @param status        One of the values for `status` column in `worker` table.
+	 * @throws SQLException Any SQL exceptions faced.
+	 */
+	private void updateAndLogWorkerStatus(Connection sqlConnection, int workerId, String status) throws SQLException {
+		// Update status for worker
+		String updateStatusQuery = "UPDATE `worker` SET `status`=?, `updated_on`=NOW() WHERE `id`=?";
+		PreparedStatement updateStatement = sqlConnection.prepareStatement(updateStatusQuery);
+		updateStatement.setString(1, status);
+		updateStatement.setInt(2, workerId);
+		logQueryFromPreparedStatement(updateStatement);
+		updateStatement.executeUpdate();
+		LOG.info("UPDATED STATUS TO {} FOR WORKER_ID {} IN `worker` TABLE.", status, workerId);
+		// Log worker status
+		String insertWorkerStatusLog = "INSERT INTO `workers_statuses` (`worker_id`, `status`, `added_on`) VALUES"
+				+ " (?, ?, NOW())";
+		PreparedStatement workerStatusLogStatement = sqlConnection.prepareStatement(insertWorkerStatusLog,
+				Statement.RETURN_GENERATED_KEYS);
+		workerStatusLogStatement.setInt(1, workerId);
+		logQueryFromPreparedStatement(workerStatusLogStatement);
+		workerStatusLogStatement.execute();
+		// Get generated id
+		int logId = 0;
+		ResultSet resultSet = workerStatusLogStatement.getGeneratedKeys();
+		if (resultSet.next()) {
+			logId = resultSet.getInt(1);
+		}
+		LOG.info("SAVED WORKER STATUS UNDER ID {} INTO `workers_statuses` TABLE.", logId);
+	}
+
+	/**
 	 * Checks - in the `jobs_receivers` table in database - if a job offer sent to
 	 * workers was actually received by any of them.
 	 *
@@ -395,6 +442,7 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			received = true;
 		}
+		//
 		// Those who did not receive the job offer and have no status changes in
 		// previous 2 second, are OFFLINE
 		// TODO: The following query should update the worker status in the worker table
