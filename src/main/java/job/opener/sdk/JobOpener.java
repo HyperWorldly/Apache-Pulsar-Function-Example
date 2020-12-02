@@ -321,34 +321,17 @@ public class JobOpener implements Function<String, String> {
 	 * @param workerIds     All the workers who were sent a job offer.
 	 * @throws SQLException Any SQL exception faced.
 	 */
-	private void saveJobOfferees(Connection sqlConnection, int jobId, List<Integer> workerIds) throws SQLException {
-		// Prepare 'insert job offeree' statement
-		String insertJobOfferee = "INSERT INTO `jobs_offerees` (`job_id`, `worker_id`, `added_on`) "
+	private void saveJobOffereesWithStatus(Connection sqlConnection, int jobId, List<Integer> workerIds)
+			throws SQLException {
+		String insertJobOffereeQuery = "INSERT INTO `jobs_offerees` (`job_id`, `worker_id`, `added_on`) "
 				+ "VALUES (?, ?, NOW())";
-		PreparedStatement jobOffereeStatement = sqlConnection.prepareStatement(insertJobOfferee);
+		PreparedStatement jobOffereeStatement = sqlConnection.prepareStatement(insertJobOffereeQuery);
 		for (int aWorkerId : workerIds) {
 			jobOffereeStatement.setInt(1, jobId);
 			jobOffereeStatement.setInt(2, aWorkerId);
 			logQueryFromPreparedStatement(jobOffereeStatement);
-			// Execute the statement
 			jobOffereeStatement.execute();
-			// Prepare 'update worker status' statement
-			String updateWorkerStatus = "UPDATE `worker` SET `status`='ON-OFFER', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id`=?";
-			PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatus);
-			workerStatusStatement.setInt(1, aWorkerId);
-			logQueryFromPreparedStatement(workerStatusStatement);
-			// Execute the statement
-			workerStatusStatement.execute();
-			// Prepare 'insert worker status log' statement
-			String insertWorkerStatusLog = "INSERT INTO `workers_statuses` (`worker_id`, `status`, `added_on`) VALUES"
-					+ " (?, ?, NOW())";
-			PreparedStatement workerStatusLogStatement = sqlConnection.prepareStatement(insertWorkerStatusLog);
-			workerStatusLogStatement.setInt(1, aWorkerId);
-			workerStatusLogStatement.setString(2, "ON-OFFER");
-			logQueryFromPreparedStatement(workerStatusLogStatement);
-			// Execute the statement
-			workerStatusLogStatement.execute();
+			updateAndLogWorkerStatus(sqlConnection, aWorkerId, "ON-OFFER");
 		}
 		LOG.info("SAVED JOB AND THE WORKERS IT WAS OFFERED TO, IN `jobs_offerees` TABLE");
 	}
