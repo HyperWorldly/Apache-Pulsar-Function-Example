@@ -840,6 +840,8 @@ public class JobOpener implements Function<String, String> {
 				scheduler.shutdown();
 				LOG.info("EXECUTION SCHEDULER WAS SHUTDOWN AFTER SCHEDULING RECEIPT RUNNABLE.");
 			} else {
+				failureReason = "NO 'APPROPRIATELY SKILLED' WORKERS COULD BE FOUND 'ONLINE' IN '" + radius
+						+ "' METERS.";
 				LOG.info("JOB REQUEST FAILED BECAUSE {}", failureReason);
 				markJobAsFailed(processSqlConnection, jobId);
 				saveJobFailureDetail(processSqlConnection, jobId, failureReason);
