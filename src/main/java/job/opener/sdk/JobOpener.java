@@ -337,28 +337,6 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Get workers offered a job, from `jobs_offerees` table in database.
-	 * 
-	 * @param sqlConnection	SQL connection to use.
-	 * @param jobId			Any job's DB ID.
-	 * @return
-	 * @throws SQLException	Any SQL exception faced.
-	 */
-	private List<Integer> getJobOfferees(Connection sqlConnection, int jobId) throws SQLException {
-		String selectOffereesQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=?";
-		PreparedStatement offereesStatement = sqlConnection.prepareStatement(selectOffereesQuery);
-		offereesStatement.setInt(1, jobId);
-		logQueryFromPreparedStatement(offereesStatement);
-		// Execute the statement
-		ResultSet resultSet = offereesStatement.executeQuery();
-		List<Integer> offereeIds = new ArrayList<Integer>();
-		while (resultSet.next()) {
-			offereeIds.add(resultSet.getInt(1));
-		}
-		return offereeIds;
-	}
-
-	/**
 	 * Prepares a job offer or open request, as a JSON object.
 	 *
 	 * @param jobAsJsonObject Job offer as a JSON object.
