@@ -415,10 +415,10 @@ public class JobOpener implements Function<String, String> {
 		if (someWorkerReceived) {
 			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `worker_id` NOT IN (SELECT"
 					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=?)) AND `status`='ON-OFFER' AND "
-					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
 		} else {
 			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=?) AND `status`="
-					+ "'ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+					+ "'ON-OFFER' AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
 		}
 		PreparedStatement workersWhoDidNotReceiveStatement = sqlConnection
 				.prepareStatement(selectWorkersWhoDidNotReceiveQuery);
@@ -449,10 +449,10 @@ public class JobOpener implements Function<String, String> {
 		if (someWorkerAccepted) {
 			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `worker_id` NOT IN (SELECT "
 					+ "`worker_id` FROM `job` WHERE `id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
-					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
 		} else {
 			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId
-					+ ") AND `status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+					+ ") AND `status`='ON-OFFER' AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
 		}
 		PreparedStatement workersWhoDidNotAcceptStatement = sqlConnection
 				.prepareStatement(selectWorkersWhoDidNotAcceptQuery);
@@ -525,7 +525,7 @@ public class JobOpener implements Function<String, String> {
 	 */
 	private void markJobAsFailed(Connection sqlConnection, int jobId) throws SQLException {
 		// Prepare SQL statement
-		String updateJobQuery = "UPDATE `job` SET `status`=?, `last_updated_on`=NOW() WHERE `id`=?";
+		String updateJobQuery = "UPDATE `job` SET `status`=?, `updated_on`=NOW() WHERE `id`=?";
 		PreparedStatement jobStatement = sqlConnection.prepareStatement(updateJobQuery);
 		jobStatement.setString(1, "FAILED");
 		jobStatement.setInt(2, jobId);
