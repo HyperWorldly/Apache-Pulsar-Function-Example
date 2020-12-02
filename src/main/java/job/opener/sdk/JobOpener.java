@@ -800,8 +800,8 @@ public class JobOpener implements Function<String, String> {
 			}
 			// Ensure that we have some worker IDs
 			if (!workerIds.isEmpty()) {
-				// Save the worker IDs against job's id for future reference
-				saveJobOfferees(processSqlConnection, jobId, workerIds);
+				// Save the workers offered a job, and update status to ON-OFFER
+				saveJobOffereesWithStatus(processSqlConnection, jobId, workerIds);
 				// Prepare a job offer message containing the workerId and the jobId
 				JsonObject jobOffer = prepareOfferOrJobRequest(jobAsJsonObject, jobId, false);
 				// Send the job offer to each of the matching workers' topic
@@ -817,6 +817,8 @@ public class JobOpener implements Function<String, String> {
 							Connection receiptRunnableSqlConnection = getNewDatabaseConnection("RECEIPT RUNNABLE");
 							// Check if a sent job was marked as received
 							boolean jobReceived = wasJobReceivedByAnyWorker(receiptRunnableSqlConnection, jobId);
+							// Mark those who were sent an offer but did not receive as OFFLINE
+							markNonReceiversOffline(receiptRunnableSqlConnection, jobId, jobReceived);
 							// Close database connection
 							receiptRunnableSqlConnection.close();
 							LOG.info("CLOSED RECEIPT RUNNABLE DATABASE CONNECTION.");
@@ -840,6 +842,8 @@ public class JobOpener implements Function<String, String> {
 											// Check if a sent offer was marked as accepted
 											boolean jobAccepted = wasJobAcceptedByAnyWorker(
 													acceptanceRunnableSqlConnection, jobId);
+											// Mark worker status for the ones who received offer but did not accept
+											markNonAcceptorsOnline(acceptanceRunnableSqlConnection, jobId, jobAccepted);
 											int workerId = getWorkerForJob(acceptanceRunnableSqlConnection, jobId);
 											// Close database connection
 											acceptanceRunnableSqlConnection.close();
