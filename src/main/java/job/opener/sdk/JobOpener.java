@@ -511,26 +511,6 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			received = true;
 		}
-		//
-		// Those who did not receive the job offer and have no status changes in
-		// previous 2 second, are OFFLINE
-		// TODO: The following query should update the worker status in the worker table
-		// and then write to the log too.
-		String updateWorkerStatusQuery;
-		if (received) {
-			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE"
-					+ " `worker_id` IN (SELECT `worker_id` FROM `jobs_offerees` WHERE `worker_id` NOT IN (SELECT"
-					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
-					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
-		} else {
-			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='OFFLINE', `last_updated_on`=NOW() WHERE"
-					+ " `worker_id` IN (SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=" + jobId + ") AND "
-					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
-		}
-		PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatusQuery);
-		logQueryFromPreparedStatement(workerStatusStatement);
-		// Execute the statement
-		workerStatusStatement.execute();
 		return received;
 	}
 
@@ -555,25 +535,6 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			accepted = true;
 		}
-		// Those who received the offer, but did not accept or reject it, and have no
-		// status changes in previous 10 seconds, should be ONLINE to get a new offer
-		// TODO: The following query should update the worker status in the worker table
-		// and then write to the log too.
-		String updateWorkerStatusQuery;
-		if (accepted) {
-			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receivers` WHERE `worker_id` NOT IN (SELECT "
-					+ "`worker_id` FROM `job` WHERE `id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
-					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
-		} else {
-			updateWorkerStatusQuery = "UPDATE `workers_statuses` SET `status`='ONLINE', `last_updated_on`=NOW() WHERE "
-					+ "`worker_id` IN (SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId + ") AND "
-					+ "`status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
-		}
-		PreparedStatement workerStatusStatement = sqlConnection.prepareStatement(updateWorkerStatusQuery);
-		logQueryFromPreparedStatement(workerStatusStatement);
-		// Execute the prepared statement and get result
-		workerStatusStatement.execute();
 		return accepted;
 	}
 
