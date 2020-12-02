@@ -457,6 +457,40 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
+	 * Mark the workers who received the offer, but did not accept or reject it, and
+	 * have no status changes in previous 10 seconds, as ONLINE.
+	 * 
+	 * @param sqlConnection      SQL connection to use.
+	 * @param jobId              Any job's DB ID.
+	 * @param someWorkerAccepted Whether the job was accepted by any worker or not.
+	 * @throws SQLException
+	 */
+	private void markNonAcceptorsOnline(Connection sqlConnection, int jobId, boolean someWorkerAccepted)
+			throws SQLException {
+		String selectWorkersWhoDidNotAcceptQuery;
+		if (someWorkerAccepted) {
+			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `worker_id` NOT IN (SELECT "
+					+ "`worker_id` FROM `job` WHERE `id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
+					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+		} else {
+			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId
+					+ ") AND `status`='ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+		}
+		PreparedStatement workersWhoDidNotAcceptStatement = sqlConnection
+				.prepareStatement(selectWorkersWhoDidNotAcceptQuery);
+		workersWhoDidNotAcceptStatement.setInt(1, jobId);
+		logQueryFromPreparedStatement(workersWhoDidNotAcceptStatement);
+		ResultSet workersResultSet = workersWhoDidNotAcceptStatement.executeQuery();
+		List<Integer> nonAcceptorIds = new ArrayList<Integer>();
+		while (workersResultSet.next()) {
+			nonAcceptorIds.add(workersResultSet.getInt(1));
+		}
+		for (int aNonAcceptor : nonAcceptorIds) {
+			updateAndLogWorkerStatus(sqlConnection, aNonAcceptor, "ONLINE");
+		}
+	}
+
+	/**
 	 * Checks - in the `jobs_receivers` table in database - if a job offer sent to
 	 * workers was actually received by any of them.
 	 *
