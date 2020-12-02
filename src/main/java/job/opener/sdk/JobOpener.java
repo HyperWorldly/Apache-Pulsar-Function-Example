@@ -423,6 +423,40 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
+	 * Mark the workers who did receive the job offer and have no status changes in
+	 * previous 2 seconds, as OFFLINE.
+	 * 
+	 * @param sqlConnection      SQL connection to use.
+	 * @param jobId              Any job's DB ID.
+	 * @param someWorkerReceived Whether the job was received by any worker or not.
+	 * @throws SQLException
+	 */
+	private void markNonReceiversOffline(Connection sqlConnection, int jobId, boolean someWorkerReceived)
+			throws SQLException {
+		String selectWorkersWhoDidNotReceiveQuery;
+		if (someWorkerReceived) {
+			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `worker_id` NOT IN (SELECT"
+					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=?)) AND `status`='ON-OFFER' AND "
+					+ "`last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+		} else {
+			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=?) AND `status`="
+					+ "'ON-OFFER' AND `last_updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+		}
+		PreparedStatement workersWhoDidNotReceiveStatement = sqlConnection
+				.prepareStatement(selectWorkersWhoDidNotReceiveQuery);
+		workersWhoDidNotReceiveStatement.setInt(1, jobId);
+		logQueryFromPreparedStatement(workersWhoDidNotReceiveStatement);
+		ResultSet workersResultSet = workersWhoDidNotReceiveStatement.executeQuery();
+		List<Integer> nonReceiverIds = new ArrayList<Integer>();
+		while (workersResultSet.next()) {
+			nonReceiverIds.add(workersResultSet.getInt(1));
+		}
+		for (int aNonReceiver : nonReceiverIds) {
+			updateAndLogWorkerStatus(sqlConnection, aNonReceiver, "OFFLINE");
+		}
+	}
+
+	/**
 	 * Checks - in the `jobs_receivers` table in database - if a job offer sent to
 	 * workers was actually received by any of them.
 	 *
