@@ -401,8 +401,8 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Mark the workers who did receive the job offer and have no status changes in
-	 * previous 2 seconds, as OFFLINE.
+	 * Marks the workers who were sent a job offer, but did not send a receipt - and
+	 * who have no status changes in previous 2 seconds - as OFFLINE.
 	 * 
 	 * @param sqlConnection      SQL connection to use.
 	 * @param jobId              Any job's DB ID.
@@ -435,8 +435,8 @@ public class JobOpener implements Function<String, String> {
 	}
 
 	/**
-	 * Mark the workers who received the offer, but did not accept or reject it, and
-	 * have no status changes in previous 10 seconds, as ONLINE.
+	 * Marks the workers who received a job offer, but did not send an acceptance -
+	 * and who have no status changes in previous 10 seconds - as ONLINE.
 	 * 
 	 * @param sqlConnection      SQL connection to use.
 	 * @param jobId              Any job's DB ID.
