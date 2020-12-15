@@ -22,7 +22,7 @@ The function has been tested in [localrun mode](https://pulsar.apache.org/docs/e
     NOTE: Since this is being run as an interactive terminal, it will never return for new command(s) to be issued, and will keep providing you with logs. Assuming that the installation is complete when the `INFO` messages start intervals.  
 6.  Install [XAMPP](https://www.apachefriends.org/download.html).
 7.  Run Apache and MySQL from XAMPP Control Panel.
-8.  [Add a user account](http://localhost/phpmyadmin/server_privileges.php?adduser) named `hyperworldly`, hostname `localhost`, and password from this function's `process` method. Also check `Create database with same name and grant all privileges` on the page.
+8.  [Add a user account](http://localhost/phpmyadmin/server_privileges.php?adduser) named `hyperworldly`, hostname `localhost`, and password from this function's `getNewDatabaseConnection` method. Also check `Create database with same name and grant all privileges` on the page.
 
 ##### LATER RUNS
 
