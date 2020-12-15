@@ -15,7 +15,7 @@ The function has been tested in [localrun mode](https://pulsar.apache.org/docs/e
 2.  Install [Maven](https://maven.apache.org/download.cgi).
 3.  Clone this repository & load it into an IDE (e.g., [Eclipse](https://www.eclipse.org/eclipseide/)).
 4.  Install [Docker Desktop for Windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) (with support for Linux Containers, as opposed to Windows Containers).  
-    See [Installation for Windows Home](https://docs.docker.com/docker-for-windows/install-windows-home/) if you have Windows Home.
+    If you have Windows Home, see [Installation for Windows Home](https://docs.docker.com/docker-for-windows/install-windows-home/).
 5.  Install [Apache Pulsar](https://github.com/apache/pulsar) as a [standalone cluster in Docker](https://pulsar.apache.org/docs/en/standalone-docker/):  
     `docker run -it -p 6650:6650 -p 8080:8080 --name pulsar --mount source=pulsardata,target=/pulsar/data --mount source=pulsarconf,target=/pulsar/conf apachepulsar/pulsar:2.5.2 bin/pulsar standalone`  
     Use `apachepulsar/pulsar:latest` for the latest version.  
