@@ -15,14 +15,14 @@ The function has been tested in [localrun mode](https://pulsar.apache.org/docs/e
 2.  Install [Maven](https://maven.apache.org/download.cgi).
 3.  Clone this repository & load it into an IDE (e.g., [Eclipse](https://www.eclipse.org/eclipseide/)).
 4.  Install [Docker Desktop for Windows](https://hub.docker.com/editions/community/docker-ce-desktop-windows) (with support for Linux Containers, as opposed to Windows Containers).  
-    See [Installation for Windows Home](https://docs.docker.com/docker-for-windows/install-windows-home/) if you have Windows Home.
+    If you have Windows Home, see [Installation for Windows Home](https://docs.docker.com/docker-for-windows/install-windows-home/).
 5.  Install [Apache Pulsar](https://github.com/apache/pulsar) as a [standalone cluster in Docker](https://pulsar.apache.org/docs/en/standalone-docker/):  
     `docker run -it -p 6650:6650 -p 8080:8080 --name pulsar --mount source=pulsardata,target=/pulsar/data --mount source=pulsarconf,target=/pulsar/conf apachepulsar/pulsar:2.5.2 bin/pulsar standalone`  
     Use `apachepulsar/pulsar:latest` for the latest version.  
     NOTE: Since this is being run as an interactive terminal, it will never return for new command(s) to be issued, and will keep providing you with logs. Assuming that the installation is complete when the `INFO` messages start intervals.  
 6.  Install [XAMPP](https://www.apachefriends.org/download.html).
 7.  Run Apache and MySQL from XAMPP Control Panel.
-8.  [Add a user account](http://localhost/phpmyadmin/server_privileges.php?adduser) named `hyperworldly`, hostname `localhost`, and password from this function's `process` method. Also check `Create database with same name and grant all privileges` on the page.
+8.  [Add a user account](http://localhost/phpmyadmin/server_privileges.php?adduser) named `hyperworldly`, hostname `localhost`, and password from this function's `getNewDatabaseConnection` method. Also check `Create database with same name and grant all privileges` on the page.
 
 ##### LATER RUNS
 
