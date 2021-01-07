@@ -153,7 +153,7 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			jobId = resultSet.getInt(1);
 		}
-		LOG.info("SAVED JOB UNDER ID {} INTO `jobs` TABLE.", jobId);
+		LOG.info("SAVED JOB UNDER ID {} INTO `job` TABLE.", jobId);
 		return jobId;
 	}
 
@@ -389,6 +389,7 @@ public class JobOpener implements Function<String, String> {
 		PreparedStatement workerStatusLogStatement = sqlConnection.prepareStatement(insertWorkerStatusLog,
 				Statement.RETURN_GENERATED_KEYS);
 		workerStatusLogStatement.setInt(1, workerId);
+		workerStatusLogStatement.setString(2, status);
 		logQueryFromPreparedStatement(workerStatusLogStatement);
 		workerStatusLogStatement.execute();
 		// Get generated id
@@ -414,11 +415,11 @@ public class JobOpener implements Function<String, String> {
 		String selectWorkersWhoDidNotReceiveQuery;
 		if (someWorkerReceived) {
 			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `worker_id` NOT IN (SELECT"
-					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=?)) AND `status`='ON-OFFER' AND "
-					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+					+ " `worker_id` FROM `jobs_receivers` WHERE `job_id`=?) AND "
+					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
 		} else {
-			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=?) AND `status`="
-					+ "'ON-OFFER' AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND)";
+			selectWorkersWhoDidNotReceiveQuery = "SELECT `worker_id` FROM `jobs_offerees` WHERE `job_id`=?"
+					+ " AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 2 SECOND))";
 		}
 		PreparedStatement workersWhoDidNotReceiveStatement = sqlConnection
 				.prepareStatement(selectWorkersWhoDidNotReceiveQuery);
@@ -448,12 +449,13 @@ public class JobOpener implements Function<String, String> {
 		String selectWorkersWhoDidNotAcceptQuery;
 		if (someWorkerAccepted) {
 			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `worker_id` NOT IN (SELECT "
-					+ "`worker_id` FROM `job` WHERE `id`=" + jobId + ")) AND `status`='ON-OFFER' AND "
-					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+					+ "`worker_id` FROM `job` WHERE `id`=?) AND "
+					+ "`updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		} else {
-			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=" + jobId
-					+ ") AND `status`='ON-OFFER' AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND)";
+			selectWorkersWhoDidNotAcceptQuery = "SELECT `worker_id` FROM `jobs_receivers` WHERE `job_id`=?"
+					+ " AND `updated_on` > (SELECT DATE_SUB(NOW(), INTERVAL 12 SECOND))";
 		}
+
 		PreparedStatement workersWhoDidNotAcceptStatement = sqlConnection
 				.prepareStatement(selectWorkersWhoDidNotAcceptQuery);
 		workersWhoDidNotAcceptStatement.setInt(1, jobId);
@@ -513,6 +515,7 @@ public class JobOpener implements Function<String, String> {
 		if (resultSet.next()) {
 			accepted = true;
 		}
+		LOG.info("JOB WAS FOUND ACCEPTED? {}", accepted);
 		return accepted;
 	}
 
